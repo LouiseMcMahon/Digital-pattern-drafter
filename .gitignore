@@ -1,7 +1,8 @@
-node_modules
-dist
-coverage
-e2e-out
-reports
 .stryker-tmp
 .vitest
+coverage
+dist
+e2e-out
+node_modules
+reports
+stryker.log

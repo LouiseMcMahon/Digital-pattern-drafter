@@ -2,10 +2,11 @@
 // Each module is mutated against only the tests that exercise it, because every mutant re-runs them.
 // See ENGINEERING.md ("Mutation testing") for how to read the report and what the scores mean.
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
-  pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.test.ts'] },
+  pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts', 'src/core/pose.test.ts'] },
   flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts'] },
   bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.test.ts', 'src/core/body.test.ts'] },
 };
@@ -17,6 +18,22 @@ if (names.length === 0 || names.some((n) => !MODULES[n])) {
   process.exit(2);
 }
 
+/**
+ * A mutant that completed no tests "survives" by default, so a harness that silently runs nothing reports
+ * low scores that look like weak tests (this happened with the Vitest runner plugin). Refuse to report
+ * a score the harness did not earn.
+ */
+function harnessRanTests(file) {
+  const report = JSON.parse(readFileSync('reports/mutation/mutation.json', 'utf8'));
+  const mutants = Object.values(report.files).flatMap((f) => f.mutants).filter((m) => m.status !== 'NoCoverage' && m.status !== 'Ignored' && m.status !== 'CompileError');
+  const idle = mutants.filter((m) => m.status === 'Survived' && !(m.testsCompleted > 0));
+  if (idle.length > 0) {
+    console.error(`\nHARNESS FAILURE for ${file}: ${idle.length} of ${mutants.length} mutants "survived" without any test running. The score above is meaningless. See ENGINEERING.md, "Mutation testing".`);
+    return false;
+  }
+  return true;
+}
+
 let failed = false;
 for (const name of names) {
   const { mutate, tests } = MODULES[name];
@@ -26,5 +43,6 @@ for (const name of names) {
     env: { ...process.env, MUTATION_TESTS: tests.join(',') },
   });
   if (r.status !== 0) failed = true;
+  else if (!harnessRanTests(mutate)) failed = true;
 }
 process.exit(failed ? 1 : 0);

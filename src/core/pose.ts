@@ -31,12 +31,21 @@ const mul = (a: M3, b: M3): M3 => {
 const transpose = (a: M3): M3 => [a[0], a[3], a[6], a[1], a[4], a[7], a[2], a[5], a[8]];
 const apply = (m: M3, v: V3): V3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
 
-/** Rotation taking direction a onto direction b (Rodrigues). */
-function rotationBetween(a: V3, b: V3): M3 {
+/** Rotation taking direction a onto direction b (Rodrigues; exported for the tests). */
+export function rotationBetween(from: V3, to: V3): M3 {
+  if (norm(from) === 0 || norm(to) === 0) return IDENTITY; // no direction to turn
+  const a = unit(from); // directions: length must not matter (a non-unit input used to give a non-rotation)
+  const b = unit(to);
   const k = cross(a, b);
   const s = norm(k);
   const c = dot(a, b);
-  if (s < 1e-12) return IDENTITY;
+  if (s < 1e-12) {
+    if (c > 0) return IDENTITY; // already the same direction
+    // Opposite directions: any axis perpendicular to a will do; turn half a circle about it.
+    const axis = unit(Math.abs(a[0]) < 0.9 * norm(a) ? cross(a, [1, 0, 0]) : cross(a, [0, 1, 0]));
+    const [x, y, z] = axis;
+    return [2 * x * x - 1, 2 * x * y, 2 * x * z, 2 * y * x, 2 * y * y - 1, 2 * y * z, 2 * z * x, 2 * z * y, 2 * z * z - 1];
+  }
   const [x, y, z] = [k[0] / s, k[1] / s, k[2] / s];
   const t = 1 - c;
   return [
@@ -62,6 +71,7 @@ export class TailorPoseRig {
     if (!c) {
       const b = this.body;
       const r = b.boneLabels.indexOf(root);
+      if (r < 0) throw new Error(`Unknown bone: ${root}`); // a misspelt bone must not become a silent no-op
       const bones = new Set<number>();
       b.boneLabels.forEach((_, i) => {
         for (let j = i; j !== -1; j = b.boneParents[j]) if (j === r) { bones.add(i); break; }
@@ -118,3 +128,6 @@ export class TailorPoseRig {
     return { positions, joints };
   }
 }
+
+/** 3x3 matrix helpers, exported for the tests. */
+export { mul as matMul, transpose as matTranspose, apply as matApply };

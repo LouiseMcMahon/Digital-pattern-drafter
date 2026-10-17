@@ -115,8 +115,9 @@ export function arcPositionOf(l: Loop, p: [number, number, number]): number {
     const j = (i + 1) % n;
     const [ax, ay, az] = [pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]];
     const [dx, dy, dz] = [pts[3 * j] - ax, pts[3 * j + 1] - ay, pts[3 * j + 2] - az];
-    const len2 = dx * dx + dy * dy + dz * dz || 1e-12;
-    const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy + (p[2] - az) * dz) / len2));
+    const len2 = dx * dx + dy * dy + dz * dz;
+    // A zero-length segment (repeated point) projects to its start and contributes no length.
+    const t = len2 > 0 ? Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy + (p[2] - az) * dz) / len2)) : 0;
     const d = Math.hypot(ax + t * dx - p[0], ay + t * dy - p[1], az + t * dz - p[2]);
     const segLen = Math.sqrt(len2);
     if (d < best) { best = d; bestPos = cum + t * segLen; }
@@ -131,28 +132,19 @@ export function arcBetweenPoints(l: Loop, p: [number, number, number], q: [numbe
   return l.closed ? Math.min(d, loopLength(l) - d) : d;
 }
 
-/** The polyline of a loop between the points closest to p and q (the shorter way round if closed), for display. */
+/**
+ * The polyline of a loop between the points closest to p and q (the shorter way round if closed), for
+ * display. Always runs in loop order (from the smaller arc position to the larger, or across the loop's
+ * start when that is shorter), whichever order p and q are given in.
+ */
 export function arcPoints(l: Loop, p: [number, number, number], q: [number, number, number]): number[] {
   const total = loopLength(l);
-  let [a, b] = [arcPositionOf(l, p), arcPositionOf(l, q)];
-  const n = l.points.length / 3;
-  const cum = [0];
-  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(l.points[3 * i] - l.points[3 * i - 3], l.points[3 * i + 1] - l.points[3 * i - 2], l.points[3 * i + 2] - l.points[3 * i - 1]));
-  const at = (pos: number): number[] => {
-    pos = ((pos % total) + total) % total;
-    let i = 0;
-    while (i + 1 < n && cum[i + 1] <= pos) i++;
-    const j = (i + 1) % n;
-    const segLen = (j === 0 ? total - cum[n - 1] : cum[j] - cum[i]) || 1e-12;
-    const t = (pos - cum[i]) / segLen;
-    return [0, 1, 2].map((k) => l.points[3 * i + k] + t * (l.points[3 * j + k] - l.points[3 * i + k]));
-  };
-  if (a > b) [a, b] = [b, a];
-  let [from, to] = [a, b];
-  if (l.closed && b - a > total / 2) [from, to] = [b, a + total];
-  const out: number[] = [];
+  let [from, to] = [arcPositionOf(l, p), arcPositionOf(l, q)];
+  if (from > to) [from, to] = [to, from];
+  if (l.closed && to - from > total / 2) [from, to] = [to, from + total];
   const steps = Math.max(2, Math.ceil((to - from) / 0.5));
-  for (let k = 0; k <= steps; k++) out.push(...at(from + ((to - from) * k) / steps));
+  const out: number[] = [];
+  for (let k = 0; k <= steps; k++) out.push(...pointAtArc(l, from + ((to - from) * k) / steps));
   return out;
 }
 
