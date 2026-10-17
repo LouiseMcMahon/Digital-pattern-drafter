@@ -43,6 +43,13 @@ describe('R1/R2: fitted body reproduces the entered measurements', () => {
     expect(r.unmet.map((u) => u.name).sort()).toEqual(off);
   }, 120_000);
 
+  it('warns when measurements that are tied by definition disagree', () => {
+    const r = fitBody(body, measurer, { height: 188, armLength: 64, upperArmLength: 35, forearmLength: 27, waistHeight: 115, insideLeg: 88, crotchDepth: 30 }, { preset: 'female', maxIterations: 3 });
+    const w = r.warnings.join(' | ');
+    expect(w).toMatch(/Arm length/);
+    expect(w).toMatch(/Crotch depth/);
+  }, 120_000);
+
   it('typical fixtures need no plausibility warnings', () => {
     for (const key of ['tall188Average', 'tall188Narrow']) {
       const r = fitBody(body, measurer, FIXTURES[key].targets, { preset: 'female' });

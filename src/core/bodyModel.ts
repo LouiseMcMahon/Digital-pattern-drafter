@@ -134,6 +134,18 @@ export class BodyModel {
     return [shape.joints[3 * j], shape.joints[3 * j + 1], shape.joints[3 * j + 2]];
   }
 
+  /** Sum of a vertex's skinning weights over the bones accepted by `pick` (0..1). */
+  weightOfBones(v: number, pick: (boneIndex: number) => boolean): number {
+    let sum = 0;
+    let total = 0;
+    for (let s = 0; s < this.skinInfluences; s++) {
+      const w = this.skinW[v * this.skinInfluences + s];
+      total += w;
+      if (pick(this.skinIdx[v * this.skinInfluences + s])) sum += w;
+    }
+    return total ? sum / total : 0;
+  }
+
   /** Dominant bone of a vertex (for labelling body regions). */
   dominantBone(v: number): number {
     let best = 0;

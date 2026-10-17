@@ -39,4 +39,5 @@ All code and data must be usable if the app is published. No non-commercial or r
 ## Status
 - R1: met for the fixtures in `src/core/fixtures.ts` (`npm test`), within 0.5 cm and usually < 0.1 cm. Definitions still need calibration against real people (see PLAN.md).
 - R2: tall (188 cm) average/broad/narrow, petite and plus-size fixtures pass. Implausible proportions are flagged as warnings; measurements that cannot be met are listed, not hidden.
+- Measurement set: now 34 measurements including armscye depth, high bust, across back, across chest, shoulder length, shoulder to bust point, bust point height, waist to hip, crotch depth and length, shoulder to elbow, elbow to wrist and underarm to wrist. Conflicting inputs (arm length vs its two segments; crotch depth vs waist height minus inside leg) are flagged.
 - R4: Anny code is Apache-2.0 and its data CC0; see THIRD_PARTY_NOTICES.md.

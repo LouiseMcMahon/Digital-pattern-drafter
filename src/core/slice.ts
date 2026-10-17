@@ -2,6 +2,8 @@
 export interface Loop {
   points: number[];
   closed: boolean;
+  /** Optional per-point scalar interpolated from a per-vertex attribute (see slicePlane's attr). */
+  attr?: number[];
 }
 
 export type Plane = { point: [number, number, number]; normal: [number, number, number] };
@@ -10,7 +12,7 @@ export type Plane = { point: [number, number, number]; normal: [number, number, 
  * Intersect a triangle mesh (optionally a subset of its triangles) with a plane and chain the
  * segments into loops. Each segment end sits on a mesh edge, so segments link by edge id.
  */
-export function slicePlane(positions: Float64Array, triangles: Uint32Array, plane: Plane, subset?: ArrayLike<number>): Loop[] {
+export function slicePlane(positions: Float64Array, triangles: Uint32Array, plane: Plane, subset?: ArrayLike<number>, attr?: ArrayLike<number>): Loop[] {
   const [px, py, pz] = plane.point;
   const [nx, ny, nz] = plane.normal;
   const nv = positions.length / 3;
@@ -18,6 +20,7 @@ export function slicePlane(positions: Float64Array, triangles: Uint32Array, plan
   for (let i = 0; i < nv; i++) dist[i] = (positions[3 * i] - px) * nx + (positions[3 * i + 1] - py) * ny + (positions[3 * i + 2] - pz) * nz;
 
   const pts: number[] = [];
+  const ptAttr: number[] = [];
   const edgePoint = new Map<number, number>(); // edge key -> point index
   const pointFor = (a: number, b: number) => {
     const key = a < b ? a * nv + b : b * nv + a;
@@ -30,6 +33,7 @@ export function slicePlane(positions: Float64Array, triangles: Uint32Array, plan
         positions[3 * a + 1] + t * (positions[3 * b + 1] - positions[3 * a + 1]),
         positions[3 * a + 2] + t * (positions[3 * b + 2] - positions[3 * a + 2]),
       );
+      if (attr) ptAttr.push(attr[a] + t * (attr[b] - attr[a]));
       edgePoint.set(key, id);
     }
     return id;
@@ -72,7 +76,7 @@ export function slicePlane(positions: Float64Array, triangles: Uint32Array, plan
     }
     const points: number[] = [];
     for (const id of order) points.push(pts[3 * id], pts[3 * id + 1], pts[3 * id + 2]);
-    return { points, closed };
+    return attr ? { points, closed, attr: order.map((id) => ptAttr[id]) } : { points, closed };
   };
   // Open chains first (start at degree-1 points), then closed loops.
   for (const [id, n] of adj) if (n.length === 1 && !visited.has(id)) loops.push(walk(id));
@@ -94,4 +98,60 @@ export function loopCentroid(l: Loop): [number, number, number] {
   let [x, y, z] = [0, 0, 0];
   for (let i = 0; i < n; i++) { x += l.points[3 * i]; y += l.points[3 * i + 1]; z += l.points[3 * i + 2]; }
   return [x / n, y / n, z / n];
+}
+
+/**
+ * Position of the point on the loop closest to p, as arc length from the loop's first point
+ * (fractional: it projects onto segments, so it varies smoothly as the loop moves).
+ */
+export function arcPositionOf(l: Loop, p: [number, number, number]): number {
+  const pts = l.points;
+  const n = pts.length / 3;
+  const segs = l.closed ? n : n - 1;
+  let best = Infinity;
+  let bestPos = 0;
+  let cum = 0;
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % n;
+    const [ax, ay, az] = [pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]];
+    const [dx, dy, dz] = [pts[3 * j] - ax, pts[3 * j + 1] - ay, pts[3 * j + 2] - az];
+    const len2 = dx * dx + dy * dy + dz * dz || 1e-12;
+    const t = Math.max(0, Math.min(1, ((p[0] - ax) * dx + (p[1] - ay) * dy + (p[2] - az) * dz) / len2));
+    const d = Math.hypot(ax + t * dx - p[0], ay + t * dy - p[1], az + t * dz - p[2]);
+    const segLen = Math.sqrt(len2);
+    if (d < best) { best = d; bestPos = cum + t * segLen; }
+    cum += segLen;
+  }
+  return bestPos;
+}
+
+/** Arc length along a loop between the points closest to p and q (shorter way round if closed). */
+export function arcBetweenPoints(l: Loop, p: [number, number, number], q: [number, number, number]): number {
+  const d = Math.abs(arcPositionOf(l, p) - arcPositionOf(l, q));
+  return l.closed ? Math.min(d, loopLength(l) - d) : d;
+}
+
+/** The polyline of a loop between the points closest to p and q (the shorter way round if closed), for display. */
+export function arcPoints(l: Loop, p: [number, number, number], q: [number, number, number]): number[] {
+  const total = loopLength(l);
+  let [a, b] = [arcPositionOf(l, p), arcPositionOf(l, q)];
+  const n = l.points.length / 3;
+  const cum = [0];
+  for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(l.points[3 * i] - l.points[3 * i - 3], l.points[3 * i + 1] - l.points[3 * i - 2], l.points[3 * i + 2] - l.points[3 * i - 1]));
+  const at = (pos: number): number[] => {
+    pos = ((pos % total) + total) % total;
+    let i = 0;
+    while (i + 1 < n && cum[i + 1] <= pos) i++;
+    const j = (i + 1) % n;
+    const segLen = (j === 0 ? total - cum[n - 1] : cum[j] - cum[i]) || 1e-12;
+    const t = (pos - cum[i]) / segLen;
+    return [0, 1, 2].map((k) => l.points[3 * i + k] + t * (l.points[3 * j + k] - l.points[3 * i + k]));
+  };
+  if (a > b) [a, b] = [b, a];
+  let [from, to] = [a, b];
+  if (l.closed && b - a > total / 2) [from, to] = [b, a + total];
+  const out: number[] = [];
+  const steps = Math.max(2, Math.ceil((to - from) / 0.5));
+  for (let k = 0; k <= steps; k++) out.push(...at(from + ((to - from) * k) / steps));
+  return out;
 }

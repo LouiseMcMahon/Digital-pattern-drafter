@@ -231,6 +231,13 @@ export function fitBody(body: BodyModel, measurer: Measurer, targets: FitTargets
       if (v !== undefined && (v / h < lo || v / h > hi)) warnings.push(`${n} of ${v} cm is unusual for a height of ${h} cm (${((100 * v) / h).toFixed(0)}% of height; typical ${lo * 100}-${hi * 100}%)`);
     }
   }
+  // Measurements tied together by definition: if all are given they must agree, or no body can match them all.
+  const t = targets;
+  const tie = (label: string, a: number | undefined, b: number | undefined, detail: string) => {
+    if (a !== undefined && b !== undefined && Math.abs(a - b) > R1_TOLERANCE_CM) warnings.push(`${label} do not agree (${detail}), so they cannot all be matched`);
+  };
+  if (t.armLength !== undefined && t.upperArmLength !== undefined && t.forearmLength !== undefined) tie('Arm length, shoulder-to-elbow and elbow-to-wrist', t.armLength, t.upperArmLength + t.forearmLength, `${t.armLength} vs ${t.upperArmLength} + ${t.forearmLength}`);
+  if (t.crotchDepth !== undefined && t.waistHeight !== undefined && t.insideLeg !== undefined) tie('Crotch depth, waist height and inside leg', t.crotchDepth, t.waistHeight - t.insideLeg, `${t.crotchDepth} vs ${t.waistHeight} - ${t.insideLeg}`);
   const bigZ = Array.from(theta.slice(0, Kf)).filter((v) => Math.abs(v) > 3).length;
   if (bigZ) warnings.push(`overall body shape is far from typical (${bigZ} shape component(s) beyond 3 standard deviations)`);
   groups.forEach((gr, i) => {

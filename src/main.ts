@@ -58,6 +58,10 @@ const VIEWS: Record<string, [number, number, number, number, number, number]> = 
   back: [0, 100, -380, 0, 95, 0],
   three: [250, 130, 280, 0, 95, 0],
   torso: [150, 135, 190, 0, 125, 0],
+  chest: [0, 140, 190, 0, 138, 0],
+  chestBack: [0, 140, -190, 0, 138, 0],
+  chestSide: [190, 140, 20, 0, 138, 0],
+  lower: [0, 70, 300, 0, 70, 0],
 };
 function setView(name: string) {
   const v = VIEWS[name];
@@ -81,14 +85,27 @@ function drawLines(shape: ReturnType<BodyModel['evaluate']>) {
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(r.points), 3));
     lineGroup.add(new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color: 0xd01040 })));
   }
+  const lm = measurer.landmarks(shape);
+  const dot = new THREE.SphereGeometry(0.7);
+  for (const m of lm.marks) {
+    const mesh2 = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color: m.name.startsWith('crease') ? 0x1060ff : 0x10a040 }));
+    mesh2.position.set(...m.point);
+    lineGroup.add(mesh2);
+  }
+  for (const pth of lm.paths) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pth.points), 3));
+    lineGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff8000 })));
+  }
 }
-$('lines').onchange = () => { drawLines(body.evaluate(current)); render(); };
+$('lines').onchange = () => show(current);
 
 function show(params: BodyParams) {
   current = params;
   const shape = body.evaluate(params);
+  const shown = shape;
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.positions), 3));
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shown.positions), 3));
   geo.setIndex(new THREE.BufferAttribute(body.faces, 1));
   geo.computeVertexNormals();
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
