@@ -41,3 +41,59 @@ export function vertexNormals(m: Mesh): Vec3[] {
   }
   return acc.map(normalize);
 }
+
+/** A panel pulled out of a larger mesh. vertexMap[sub] = original vertex index. */
+export interface Submesh {
+  mesh: Mesh;
+  vertexMap: number[];
+}
+
+export function extractSubmesh(m: Mesh, triangleIds: number[]): Submesh {
+  const toSub = new Map<number, number>();
+  const vertexMap: number[] = [];
+  const tris: number[] = [];
+  for (const t of triangleIds) {
+    for (let k = 0; k < 3; k++) {
+      const v = m.triangles[3 * t + k];
+      let s = toSub.get(v);
+      if (s === undefined) {
+        s = vertexMap.length;
+        toSub.set(v, s);
+        vertexMap.push(v);
+      }
+      tris.push(s);
+    }
+  }
+  const positions = new Float64Array(vertexMap.length * 3);
+  vertexMap.forEach((v, s) => positions.set([m.positions[3 * v], m.positions[3 * v + 1], m.positions[3 * v + 2]], 3 * s));
+  return { mesh: { positions, triangles: new Uint32Array(tris) }, vertexMap };
+}
+
+/** Closed boundary loops (vertex indices, in triangle winding order). */
+export function boundaryLoops(m: Mesh): number[][] {
+  const directed = new Set<number>();
+  const n = vertexCount(m);
+  for (let t = 0; t < triangleCount(m); t++) {
+    for (let k = 0; k < 3; k++) directed.add(m.triangles[3 * t + k] * n + m.triangles[3 * t + ((k + 1) % 3)]);
+  }
+  const next = new Map<number, number>();
+  for (const e of directed) {
+    const a = Math.floor(e / n);
+    const b = e % n;
+    if (!directed.has(b * n + a)) next.set(a, b);
+  }
+  const loops: number[][] = [];
+  const used = new Set<number>();
+  for (const start of next.keys()) {
+    if (used.has(start)) continue;
+    const loop: number[] = [];
+    let cur: number | undefined = start;
+    while (cur !== undefined && !used.has(cur)) {
+      used.add(cur);
+      loop.push(cur);
+      cur = next.get(cur);
+    }
+    loops.push(loop);
+  }
+  return loops;
+}
