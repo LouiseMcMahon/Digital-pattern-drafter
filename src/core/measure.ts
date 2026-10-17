@@ -1,5 +1,5 @@
 import type { BodyModel, BodyShape } from './bodyModel';
-import { type Loop, arcBetweenPoints, arcPoints, loopCentroid, loopLength, slicePlane } from './slice';
+import { type Loop, arcBetweenPoints, arcPoints, arcPositionOf, pointAtArc as at, loopCentroid, loopLength, slicePlane } from './slice';
 
 /**
  * Sewing measurements on the baked body. There is ONE definition of each measurement here and it is
@@ -10,7 +10,7 @@ import { type Loop, arcBetweenPoints, arcPoints, loopCentroid, loopLength, slice
  *
  * Definitions (L/R averaged where paired):
  *  height          floor to top of head
- *  neck            ring perpendicular to the neck axis, 25% up from neck base to mid neck
+ *  neck            ring perpendicular to the neck axis, 25% up from neck base to mid neck (loops under 20 cm ignored)
  *  shoulderWidth   straight distance between the two shoulder points (acromion: topmost point 1.5 cm outside the arm joint)
  *  bust            horizontal ring at the bust apex height, torso only (tape passes under the arms)
  *  underbust       horizontal ring 28% of the way down from bust apex to waist
@@ -122,7 +122,7 @@ export class Measurer {
     this.region = new Uint8Array(body.vertexCount);
     const names: Region[] = ['torso', 'legs', 'arms', 'head'];
     const boneRegion = body.boneLabels.map((l): Region => {
-      if (/^(root|spine)/.test(l)) return 'torso';
+      if (/^(root|spine|clavicle)/.test(l)) return 'torso'; // the clavicle skins the upper chest: part of the trunk ring, not the arm
       if (/^(pelvis|upperleg|lowerleg|foot|toe)/.test(l)) return 'legs';
       if (/^(neck|head|eye)/.test(l)) return 'head';
       return 'arms';
@@ -216,9 +216,11 @@ export class Measurer {
 
     // Underarm (axilla): above this level the arms merge with the trunk. Bisect for that level on the
     // mean body, then take the point where the trunk loop and each arm loop come closest.
+    // Arm loops sit well out from the midline, the trunk loop on it; thresholds scale with the body.
+    const armX = Math.abs(b.joint(mean, 'upperarm01.L')[0]);
     const separate = (y: number) => {
       const loops = slicePlane(mean.positions, b.faces, { point: [0, y, 0], normal: [0, 1, 0] }).filter((l) => l.closed && loopLength(l) > 12);
-      return loops.filter((l) => Math.abs(loopCentroid(l)[0]) > 14).length >= 2;
+      return loops.filter((l) => Math.abs(loopCentroid(l)[0]) > 0.6 * armX).length >= 2;
     };
     let aLo = waistY + 8;
     let aHi = b.joint(mean, 'neck01')[1];
@@ -228,9 +230,9 @@ export class Measurer {
     }
     const yA = aLo - 0.3;
     const loopsA = slicePlane(mean.positions, b.faces, { point: [0, yA, 0], normal: [0, 1, 0] }).filter((l) => l.closed && loopLength(l) > 12);
-    const trunk = loopsA.filter((l) => Math.abs(loopCentroid(l)[0]) < 8).sort((p, q) => loopLength(q) - loopLength(p))[0];
+    const trunk = loopsA.filter((l) => Math.abs(loopCentroid(l)[0]) < 0.25 * armX).sort((p, q) => loopLength(q) - loopLength(p))[0];
     const axilla = ([1, -1] as const).map((side) => {
-      const arm = loopsA.filter((l) => side * loopCentroid(l)[0] > 14).sort((p, q) => loopLength(q) - loopLength(p))[0];
+      const arm = loopsA.filter((l) => side * loopCentroid(l)[0] > 0.6 * armX).sort((p, q) => loopLength(q) - loopLength(p))[0];
       let bd = Infinity;
       let m: Vec = [0, yA, 0];
       for (let i = 0; i < trunk.points.length; i += 3) for (let j = 0; j < arm.points.length; j += 3) {
@@ -259,23 +261,37 @@ export class Measurer {
     return { bustApex: apex, shoulderPoint, c7, hip, crotch, axilla, neckPoint };
   }
 
-  /** Trunk ring at height y: the loop around the body's midline (open chains are closed like a tape would). */
+  /**
+   * Trunk ring at height y. Below the underarm the arms are separate loops, so the loop around the midline
+   * of the full mesh is exactly the trunk. If that loop has merged with the arms (it is far wider than the
+   * shoulders), fall back to slicing only the trunk and legs and closing any gap like a tape would.
+   */
   private centralTorsoLoop(shape: BodyShape, y: number): Loop | undefined {
-    const loops = slicePlane(shape.positions, this.bodyTris, { point: [0, y, 0], normal: [0, 1, 0] });
-    let best: Loop | undefined;
-    let bx = Infinity;
-    for (const l of loops) {
-      const cx = Math.abs(loopCentroid(l)[0]);
-      if (loopLength(l) < 15) continue;
-      if (cx < bx) { bx = cx; best = l; }
-    }
-    if (best) this.record?.push({ name: this.tag, points: best.points });
-    return best && { ...best, closed: true };
+    const pick = (tris: Uint32Array) => {
+      let best: Loop | undefined;
+      let bx = Infinity;
+      for (const l of slicePlane(shape.positions, tris, { point: [0, y, 0], normal: [0, 1, 0] })) {
+        const cx = Math.abs(loopCentroid(l)[0]);
+        if (loopLength(l) < 15) continue;
+        if (cx < bx) { bx = cx; best = l; }
+      }
+      return best;
+    };
+    let loop = pick(this.body.faces);
+    if (loop?.closed) {
+      let wide = 0;
+      for (let i = 0; i < loop.points.length; i += 3) wide = Math.max(wide, Math.abs(loop.points[i]));
+      if (wide > 1.7 * Math.abs(this.body.joint(shape, 'upperarm01.L')[0])) loop = undefined; // merged with the arms
+    } else loop = undefined;
+    loop ??= pick(this.bodyTris);
+    if (loop) this.record?.push({ name: this.tag, points: loop.points });
+    return loop && { ...loop, closed: true };
   }
 
   /** Ring around a limb: plane perpendicular to the axis, the loop whose centre is nearest the point. */
-  private limbLoop(shape: BodyShape, point: Vec, axis: Vec): Loop | undefined {
-    const loops = slicePlane(shape.positions, this.body.faces, { point, normal: unit(axis) }).filter((l) => l.closed);
+  private limbLoop(shape: BodyShape, point: Vec, axis: Vec, minLength = 8): Loop | undefined {
+    // Ignore tiny loops (slivers where the plane grazes a fold, the jaw or a vertex).
+    const loops = slicePlane(shape.positions, this.body.faces, { point, normal: unit(axis) }).filter((l) => l.closed && loopLength(l) > minLength);
     let best = Infinity;
     let chosen: Loop | undefined;
     for (const l of loops) {
@@ -285,8 +301,8 @@ export class Measurer {
     return chosen;
   }
 
-  private limbRing(shape: BodyShape, point: Vec, axis: Vec): number {
-    const chosen = this.limbLoop(shape, point, axis);
+  private limbRing(shape: BodyShape, point: Vec, axis: Vec, minLength = 8): number {
+    const chosen = this.limbLoop(shape, point, axis, minLength);
     if (chosen) this.record?.push({ name: this.tag, points: chosen.points });
     return chosen ? loopLength(chosen) : NaN;
   }
@@ -296,7 +312,15 @@ export class Measurer {
     const dir = sub(q, p);
     const n = unit([-dir[2], 0, dir[0]]); // normal of the vertical plane containing p and q
     const loops = slicePlane(shape.positions, this.body.faces, { point: p, normal: n });
-    const l = loops.sort((a, c) => loopLength(c) - loopLength(a))[0];
+    // The plane contains both points, so the right loop passes through both. With the arms hanging beside
+    // the trunk the slice can split into several loops, and the longest is not necessarily that one.
+    const distTo = (l: Loop, pt: Vec) => { const a = arcPositionOf(l, pt); return Math.hypot(...(at(l, a).map((v, i) => v - pt[i]) as Vec)); };
+    let l: Loop | undefined;
+    let bd = Infinity;
+    for (const c of loops) {
+      const d = distTo(c, p) + distTo(c, q);
+      if (d < bd) { bd = d; l = c; }
+    }
     if (l) this.paths?.push({ name: this.tag, points: arcPoints(l, p, q) });
     return l ? arcBetweenPoints(l, p, q) : NaN;
   }
@@ -437,7 +461,7 @@ export class Measurer {
     out.height = topY;
     const nb = J('neck01');
     const nm = J('neck03');
-    if (want('neck')) out.neck = this.limbRing(shape, lerp(nb, nm, 0.25), sub(nm, nb));
+    if (want('neck')) out.neck = this.limbRing(shape, lerp(nb, nm, 0.25), sub(nm, nb), 20);
     out.shoulderWidth = norm(sub(P(lm.shoulderPoint[0]), P(lm.shoulderPoint[1])));
     if (want('bust')) out.bust = ring(apexY);
     if (want('underbust')) out.underbust = ring(apexY - 0.28 * (apexY - waistY));

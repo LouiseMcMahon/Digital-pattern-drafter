@@ -1,4 +1,5 @@
 import type { Mesh } from './mesh';
+import { type PoseName, TailorPoseRig } from './pose';
 
 /** Manifest written by tools/bake_body/bake_body.py. */
 export interface BodyManifest {
@@ -87,8 +88,15 @@ export class BodyModel {
     return this.pcaStd[k];
   }
 
-  /** Evaluate a body. `grounded` moves it so the soles are at y = 0. */
-  evaluate(params: BodyParams = {}, grounded = true): BodyShape {
+  private poseRig?: TailorPoseRig;
+
+  /**
+   * Evaluate a body. By default it stands in the standard tailor pose (REQUIREMENTS.md R5) with the soles
+   * on y = 0. Pass `pose: 'rest'` for the model's native rest pose.
+   */
+  evaluate(params: BodyParams = {}, opts: { grounded?: boolean; pose?: PoseName } = {}): BodyShape {
+    const grounded = opts.grounded ?? true;
+    const pose = opts.pose ?? 'tailor';
     const D = (this.vertexCount + this.jointCount) * 3;
     const out = new Float64Array(D);
     for (let i = 0; i < D; i++) out[i] = this.mean[i];
@@ -116,12 +124,15 @@ export class BodyModel {
       }
     }
     const nV3 = this.vertexCount * 3;
+    let shape: BodyShape = { positions: out.slice(0, nV3), joints: out.slice(nV3) };
+    if (pose === 'tailor') shape = (this.poseRig ??= new TailorPoseRig(this)).apply(shape);
     if (grounded) {
       let minY = Infinity;
-      for (let i = 1; i < nV3; i += 3) minY = Math.min(minY, out[i]);
-      for (let i = 1; i < D; i += 3) out[i] -= minY;
+      for (let i = 1; i < nV3; i += 3) minY = Math.min(minY, shape.positions[i]);
+      for (let i = 1; i < nV3; i += 3) shape.positions[i] -= minY;
+      for (let i = 1; i < shape.joints.length; i += 3) shape.joints[i] -= minY;
     }
-    return { positions: out.slice(0, nV3), joints: out.slice(nV3) };
+    return shape;
   }
 
   mesh(shape: BodyShape): Mesh {

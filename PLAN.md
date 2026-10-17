@@ -1,5 +1,7 @@
 # Digital Pattern Drafter — plan
 
+Standing rules: REQUIREMENTS.md (R1 measurements match, R2 extremes, R5 standard tailor pose, R6 no drift) and ENGINEERING.md (test layers, golden snapshots, procedure for changing the model).
+
 See REQUIREMENTS.md for the non-negotiables. In particular: the body must match entered sewing measurements within 0.5 cm, including for extreme bodies (first users are 6'2" women).
 
 A web app: enter measurements (later: a 3D scan) → get a 3D body → draw seam
@@ -32,9 +34,11 @@ Ease is a percentage applied to the body's own lengths when flattening, independ
 ## Known limitations
 - Measurement definitions are mine (documented in measure.ts) and have NOT been calibrated against real tape measurements. Two known proxies: across back/chest use the arm skinning weight at 0.8 (CREASE_WEIGHT), chosen so an average woman lands in published ranges; armscye depth carries a +4 cm CALIBRATION estimated from published means (the mesh underarm is higher than a tailor's ruler level). Real people's numbers (especially shoulder width, underbust, nape-to-waist, front length) may differ systematically from these definitions. Next step: measure a real person and compare.
 - Not yet measurable: armscye circumference (the mesh has no arm/torso boundary line to measure around), sitting crotch depth, outseam along the surface, back/front neck drop, and separate left/right limbs (L/R are averaged).
-- The body is in Anny's rest pose (arms slightly out, A-pose-ish). Posing is not implemented (skinning data is already baked).
+- The tailor pose (R5) is arms 10 degrees from vertical with straight elbows, vertical legs and flat feet; head and spine are left as the model has them. Other poses (seated, arms raised for sleeve checks) are not implemented.
 - Fixtures are plausible invented measurement sets, not real people. Replace/add real sets as they become available.
 - The fit uses only local controls that change size and proportion (FIT_CONTROL in src/core/fit.ts); posture-like morphs are excluded because they hit numbers by distorting the body.
 - The earlier ring-loft torso (src/core/body.ts and the flatten tests that use it) is superseded by the baked body and will be removed once flattening runs on the new mesh. The demo page no longer shows panels/ease; that returns with seam drawing.
 - Flattening: panels with strong double curvature distort; the flattener is flip-free but approximate.
 - A fit takes a few seconds in a worker; the Jacobian is finite-difference.
+- Landmark detection (shoulder point, neck point, axilla, ...) runs once on the mean body and can move by 1-2 cm when the upstream geometry shifts slightly. Golden tests catch it; see ENGINEERING.md.
+- No real-person measurement data yet: everything is checked against published ranges and against itself.

@@ -1,0 +1,44 @@
+name: CI
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  check:
+    name: typecheck, tests with coverage thresholds, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Runs every test (golden snapshots, pose, invariants, smoothness, R1/R2 fixtures) and enforces
+      # the coverage thresholds in vitest.config.ts.
+      - run: npm run coverage
+      - run: npm run build
+
+  e2e:
+    name: end-to-end smoke test in a real browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: e2e-out/

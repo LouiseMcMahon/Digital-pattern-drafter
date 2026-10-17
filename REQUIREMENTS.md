@@ -36,8 +36,33 @@ Panels are pulled off the 3D form along seams the user draws. Ease is a plain pe
 
 All code and data must be usable if the app is published. No non-commercial or research-only models or assets (SMPL, SMPL-X, STAR, Anny's SMPL-X topology). Keep third-party licence notices in the repo.
 
+## R5. Everything is measured and shown in the standard tailor pose
+
+Measurements are only comparable between people, and with a tape measure, if the body stands the same way. The body model's native rest pose (arms out and forward, elbows bent, legs splayed) is **not** used for anything the user sees or any measurement. The default pose of the body everywhere (viewer, measurements, fitting, flattening, seam drawing) is the **standard tailor pose**:
+
+- Standing upright, weight even, looking straight ahead (head level).
+- **Arms hang by the sides, straight at the elbow, 10 degrees from vertical, out in the coronal plane**, so there is clear air under the arm and the underarm and armscye can be measured. Hands hang naturally (palms toward the body).
+- **Legs vertical and straight** (thigh and shank both vertical), feet hip-width apart, as wide as the hips stand. Feet flat on the floor.
+- Soles on y = 0.
+
+The pose is defined in one place (`src/core/pose.ts`, `TAILOR_POSE` and `TailorPoseRig`) and applied inside `BodyModel.evaluate`. `evaluate(..., { pose: 'rest' })` still gives the native rest pose for debugging and for the baking tool, but nothing user-facing may use it.
+
+**Acceptance (tested in `src/core/pose.test.ts`)**
+- Upper arm and forearm directions are within 0.5 degrees of 10 degrees from vertical, in the coronal plane, for every body in the fixtures.
+- Thigh and shank are within 0.5 degrees of vertical.
+- The soles are on y = 0 and the feet keep their flat orientation (toes and ankle heights unchanged by the pose).
+- Posing does not change bone lengths (shoulder-to-elbow, elbow-to-wrist, hip-to-knee, knee-to-ankle) by more than 0.1 cm.
+- The posed body is left/right symmetric when the parameters are symmetric.
+- Measurement definitions are taken in this pose; a change to the pose is a change to every measurement, and must update the golden files (R6).
+
+## R6. Measurements must not drift
+
+A change to the baked body, the pose, a measurement definition, a calibration offset or the fit must never silently change what a body measures. Golden snapshots (all measurements of eight reference bodies within 0.005 cm, geometry within 0.01 cm, SHA-256 of the baked data), pose tests, measurement invariants, a smoothness scan and the R1/R2 acceptance fixtures enforce this. `ENGINEERING.md` says how they are updated: deliberately, by script, with a drift report, in a separate commit.
+
 ## Status
 - R1: met for the fixtures in `src/core/fixtures.ts` (`npm test`), within 0.5 cm and usually < 0.1 cm. Definitions still need calibration against real people (see PLAN.md).
 - R2: tall (188 cm) average/broad/narrow, petite and plus-size fixtures pass. Implausible proportions are flagged as warnings; measurements that cannot be met are listed, not hidden.
 - Measurement set: now 34 measurements including armscye depth, high bust, across back, across chest, shoulder length, shoulder to bust point, bust point height, waist to hip, crotch depth and length, shoulder to elbow, elbow to wrist and underarm to wrist. Conflicting inputs (arm length vs its two segments; crotch depth vs waist height minus inside leg) are flagged.
+- R5: implemented (`src/core/pose.ts`), default for all evaluation.
+- R6: golden measurement snapshots, pinned body-data hash, pose and measurement invariants, see ENGINEERING.md.
 - R4: Anny code is Apache-2.0 and its data CC0; see THIRD_PARTY_NOTICES.md.

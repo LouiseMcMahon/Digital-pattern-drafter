@@ -155,3 +155,23 @@ export function arcPoints(l: Loop, p: [number, number, number], q: [number, numb
   for (let k = 0; k <= steps; k++) out.push(...at(from + ((to - from) * k) / steps));
   return out;
 }
+
+/** The point at arc length `pos` from the loop's first point (wraps if closed). */
+export function pointAtArc(l: Loop, pos: number): [number, number, number] {
+  const pts = l.points;
+  const n = pts.length / 3;
+  const segs = l.closed ? n : n - 1;
+  const total = loopLength(l);
+  pos = l.closed ? ((pos % total) + total) % total : Math.max(0, Math.min(total, pos));
+  let cum = 0;
+  for (let i = 0; i < segs; i++) {
+    const j = (i + 1) % n;
+    const len = Math.hypot(pts[3 * j] - pts[3 * i], pts[3 * j + 1] - pts[3 * i + 1], pts[3 * j + 2] - pts[3 * i + 2]);
+    if (pos <= cum + len || i === segs - 1) {
+      const t = len > 0 ? (pos - cum) / len : 0;
+      return [0, 1, 2].map((k) => pts[3 * i + k] + t * (pts[3 * j + k] - pts[3 * i + k])) as [number, number, number];
+    }
+    cum += len;
+  }
+  return [pts[0], pts[1], pts[2]];
+}
