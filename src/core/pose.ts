@@ -42,7 +42,7 @@ export function rotationBetween(from: V3, to: V3): M3 {
   if (s < 1e-12) {
     if (c > 0) return IDENTITY; // already the same direction
     // Opposite directions: any axis perpendicular to a will do; turn half a circle about it.
-    const axis = unit(Math.abs(a[0]) < 0.9 * norm(a) ? cross(a, [1, 0, 0]) : cross(a, [0, 1, 0]));
+    const axis = unit(Math.abs(a[0]) < 0.9 ? cross(a, [1, 0, 0]) : cross(a, [0, 1, 0])); // a is a unit vector here
     const [x, y, z] = axis;
     return [2 * x * x - 1, 2 * x * y, 2 * x * z, 2 * y * x, 2 * y * y - 1, 2 * y * z, 2 * z * x, 2 * z * y, 2 * z * z - 1];
   }

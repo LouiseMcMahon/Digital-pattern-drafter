@@ -69,6 +69,12 @@ describe('rotation helpers', () => {
       close(matApply(R, unitV(a)), unitV(b));
       const RRt = matMul(R, matTranspose(R));
       [1, 0, 0, 0, 1, 0, 0, 0, 1].forEach((v, i) => expect(RRt[i]).toBeCloseTo(v, 9));
+      // A proper rotation (determinant +1), not a reflection such as -I, which also maps a to -a.
+      const det = R[0] * (R[4] * R[8] - R[5] * R[7]) - R[1] * (R[3] * R[8] - R[5] * R[6]) + R[2] * (R[3] * R[7] - R[4] * R[6]);
+      expect(det).toBeCloseTo(1, 9);
+      // Half a circle: applying it twice is the identity, and it fixes the axis it turns about.
+      const RR = matMul(R, R);
+      [1, 0, 0, 0, 1, 0, 0, 0, 1].forEach((v, i) => expect(RR[i]).toBeCloseTo(v, 9));
     }
   });
   it('matMul composes: (A B) v = A (B v); matTranspose inverts a rotation', () => {
