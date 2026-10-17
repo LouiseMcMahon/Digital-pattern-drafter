@@ -1,5 +1,7 @@
 # Digital Pattern Drafter — plan
 
+See REQUIREMENTS.md for the non-negotiables. In particular: the body must match entered sewing measurements within 0.5 cm, including for extreme bodies (first users are 6'2" women).
+
 A web app: enter measurements (later: a 3D scan) → get a 3D body → draw seam
 lines on it → get flat sewing patterns with horizontal and vertical ease,
 positive or negative, including stretch fabrics (knit, lycra, latex).
@@ -20,11 +22,12 @@ Ease is a percentage applied to the body's own lengths when flattening, independ
 ## Milestones
 0. [done] Spike: LSCM unwrap + relaxation toward eased targets, demo page.
 1. [done] Body: full torso (front + back) from bust, underbust, waist, hip, chest, neck, shoulder width, bust apex separation/prominence and ring heights. Circumferences are fitted by reading them back off the mesh. Named landmarks (vertex ids). Panels are sub-meshes with boundary loops. Orbit camera in the demo.
-2. Seam drawing (next): raycast onto the mesh, snap to landmarks, geodesic/slice paths, stored as face + barycentric so they survive body edits; panel detection from closed seam loops; mesh split along seams.
-3. Flattening for arbitrary panels: per-panel grainline, faster/more exact solver (ARAP / Gauss-Newton), distortion heatmap.
-4. Fit checks and export: paired seam-length comparison, notches, seam allowance, SVG/DXF/tiled PDF at 1:1.
-5. Drape preview (optional): cloth sim of sewn panels on the body.
-6. Scan import: PLY/OBJ, non-rigid registration of the template.
+2. Body v2 (in progress, blocked on a base-model decision): arms, neck, legs, hands, feet. The ring-loft torso can't branch. Candidates: bake a compact shape model from Anny (Apache-2.0 code, CC0 MakeHuman data) or MakeHuman targets; then a measurement-driven correction so R1/R2 hold. Includes a full sewing-measurement set, one shared measurement definition for fit + read-back + tests, and extreme-body test fixtures.
+3. Seam drawing: raycast onto the mesh, snap to landmarks, geodesic/slice paths, stored as face + barycentric so they survive body edits; panel detection from closed seam loops; mesh split along seams.
+4. Flattening for arbitrary panels: per-panel grainline, faster/more exact solver (ARAP / Gauss-Newton), distortion heatmap.
+5. Fit checks and export: paired seam-length comparison, notches, seam allowance, SVG/DXF/tiled PDF at 1:1.
+6. Drape preview (optional): cloth sim of sewn panels on the body.
+7. Scan import: PLY/OBJ, non-rigid registration of the template.
 
 ## Known limitations
 - Body is a ring loft: no arms/armholes, a plain neck stub, and the bust is a Gaussian bump. It is a dress-form stand-in, not an anatomical model. Depth ratios and shoulder shape are guesses to tune against a real form.
