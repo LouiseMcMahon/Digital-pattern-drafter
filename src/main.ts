@@ -303,6 +303,13 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const rect = renderer.domElement.getBoundingClientRect();
   return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
 };
+(window as unknown as Record<string, unknown>).screenOfSeamPoint = (seam: number, index: number) => {
+  const p = seams[seam]?.points[index];
+  if (!p) return undefined;
+  const v = new THREE.Vector3(...pointOnSurface(bodyMesh(), p)).project(camera);
+  const rect = renderer.domElement.getBoundingClientRect();
+  return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+};
 (window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
 $('seam-undo').onclick = () => {
   if (!activeSeam()) return;
