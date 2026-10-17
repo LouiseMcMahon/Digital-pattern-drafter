@@ -68,6 +68,9 @@ export class Measurer {
   private readonly lm: Landmarks;
   private readonly bodyTris: Uint32Array; // torso + legs, no arms/head: closed rings around the trunk
   private readonly region: Uint8Array;
+  /** While recording, every measuring ring is stored under the measurement being taken. */
+  private record?: { name: string; points: number[] }[];
+  private tag = '';
 
   constructor(private readonly body: BodyModel) {
     const mean = body.evaluate();
@@ -177,6 +180,7 @@ export class Measurer {
       if (loopLength(l) < 15) continue;
       if (cx < bx) { bx = cx; best = l; }
     }
+    if (best) this.record?.push({ name: this.tag, points: best.points });
     return best && { ...best, closed: true };
   }
 
@@ -185,10 +189,12 @@ export class Measurer {
     const loops = slicePlane(shape.positions, this.body.faces, { point, normal: unit(axis) }).filter((l) => l.closed);
     let best = Infinity;
     let len = NaN;
+    let chosen: Loop | undefined;
     for (const l of loops) {
       const d = norm(sub(loopCentroid(l), point));
-      if (d < best) { best = d; len = loopLength(l); }
+      if (d < best) { best = d; len = loopLength(l); chosen = l; }
     }
+    if (chosen) this.record?.push({ name: this.tag, points: chosen.points });
     return len;
   }
 
@@ -224,11 +230,22 @@ export class Measurer {
     return Math.min(d, total - d);
   }
 
+  /** The rings (closed polylines, xyz interleaved) each ring-type measurement is taken along, for display. */
+  rings(shape: BodyShape): { name: MeasurementName; points: number[] }[] {
+    this.record = [];
+    try {
+      this.measure(shape);
+      return this.record as { name: MeasurementName; points: number[] }[];
+    } finally {
+      this.record = undefined;
+    }
+  }
+
   /** Measure all, or only the requested measurements (cheaper while fitting). */
   measure(shape: BodyShape, only?: readonly MeasurementName[]): Measurements {
     const b = this.body;
     const out = {} as Measurements;
-    const want = (n: MeasurementName) => !only || only.includes(n);
+    const want = (n: MeasurementName) => { this.tag = n; return !only || only.includes(n); };
     const lm = this.lm;
     const P = (id: number) => this.v(shape, id);
     const J = (name: string) => b.joint(shape, name);

@@ -18,6 +18,8 @@ controls.innerHTML = `
   ${MEASUREMENT_NAMES.map((n) => `<tr><td>${MEASUREMENT_LABELS[n]}</td><td><input type="number" step="0.5" id="in-${n}"></td><td id="got-${n}"></td><td id="err-${n}"></td></tr>`).join('')}
   </tbody></table>
   <button id="fit">Fit body</button> <button id="reset">Reset</button>
+  <div style="margin-top:6px">View: <button data-view="front">Front</button> <button data-view="side">Side</button> <button data-view="back">Back</button> <button data-view="three">3/4</button> <button data-view="torso">Torso</button></div>
+  <label><input type="checkbox" id="lines"> show where each ring is measured</label>
   <div id="status">Loading body model…</div>`;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
@@ -27,7 +29,11 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 threeEl.append(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf4f4f4);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x777788, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(150, 300, 250);
+scene.add(sun);
+scene.add(new THREE.DirectionalLight(0xbbccff, 0.5).translateZ(-300).translateY(100));
 const camera = new THREE.PerspectiveCamera(30, 1, 1, 2000);
 camera.position.set(0, 100, 380);
 const orbit = new OrbitControls(camera, renderer.domElement);
@@ -42,10 +48,41 @@ new ResizeObserver(() => {
   render();
 }).observe(threeEl);
 let mesh: THREE.Mesh | undefined;
+const lineGroup = new THREE.Group();
+scene.add(lineGroup);
+
+const VIEWS: Record<string, [number, number, number, number, number, number]> = {
+  // camera x,y,z then target x,y,z
+  front: [0, 100, 380, 0, 95, 0],
+  side: [380, 100, 0, 0, 95, 0],
+  back: [0, 100, -380, 0, 95, 0],
+  three: [250, 130, 280, 0, 95, 0],
+  torso: [150, 135, 190, 0, 125, 0],
+};
+function setView(name: string) {
+  const v = VIEWS[name];
+  camera.position.set(v[0], v[1], v[2]);
+  orbit.target.set(v[3], v[4], v[5]);
+  orbit.update();
+  render();
+}
+document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
+(window as unknown as { setView: typeof setView }).setView = setView;
 
 let body: BodyModel;
 let measurer: Measurer;
 let current: BodyParams = {};
+
+function drawLines(shape: ReturnType<BodyModel['evaluate']>) {
+  lineGroup.clear();
+  if (!$<HTMLInputElement>('lines').checked) return;
+  for (const r of measurer.rings(shape)) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(r.points), 3));
+    lineGroup.add(new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color: 0xd01040 })));
+  }
+}
+$('lines').onchange = () => { drawLines(body.evaluate(current)); render(); };
 
 function show(params: BodyParams) {
   current = params;
@@ -58,6 +95,7 @@ function show(params: BodyParams) {
   mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd9a08a }));
   scene.add(mesh);
   render();
+  drawLines(shape);
   const m = measurer.measure(shape);
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
   return m;
