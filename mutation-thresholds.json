@@ -2,12 +2,12 @@
  "slice": 93,
  "pose": 94,
  "bodyModel": 93,
- "flatten": 65,
+ "flatten": 80,
  "mesh": 96,
  "ease": 94,
  "lscm": 82,
  "body": 66,
  "seam": 88,
  "cut": 78,
- "geodesic": 0
+ "geodesic": 78
 }
