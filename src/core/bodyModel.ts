@@ -1,5 +1,5 @@
 import type { Mesh } from './mesh';
-import { type PoseName, TailorPoseRig } from './pose';
+import { type PoseName, TAILOR_POSE, TailorPoseRig } from './pose';
 
 /** Manifest written by tools/bake_body/bake_body.py. */
 export interface BodyManifest {
@@ -88,13 +88,13 @@ export class BodyModel {
     return this.pcaStd[k];
   }
 
-  private poseRig?: TailorPoseRig;
+  private readonly poseRigs = new Map<number, TailorPoseRig>();
 
   /**
    * Evaluate a body. By default it stands in the standard tailor pose (REQUIREMENTS.md R5) with the soles
    * on y = 0. Pass `pose: 'rest'` for the model's native rest pose.
    */
-  evaluate(params: BodyParams = {}, opts: { grounded?: boolean; pose?: PoseName } = {}): BodyShape {
+  evaluate(params: BodyParams = {}, opts: { grounded?: boolean; pose?: PoseName; /** tests only */ armDegrees?: number } = {}): BodyShape {
     const grounded = opts.grounded ?? true;
     const pose = opts.pose ?? 'tailor';
     const D = (this.vertexCount + this.jointCount) * 3;
@@ -125,7 +125,12 @@ export class BodyModel {
     }
     const nV3 = this.vertexCount * 3;
     let shape: BodyShape = { positions: out.slice(0, nV3), joints: out.slice(nV3) };
-    if (pose === 'tailor') shape = (this.poseRig ??= new TailorPoseRig(this)).apply(shape);
+    if (pose === 'tailor') {
+      const deg = opts.armDegrees ?? TAILOR_POSE.armDegreesFromVertical;
+      let rig = this.poseRigs.get(deg);
+      if (!rig) this.poseRigs.set(deg, (rig = new TailorPoseRig(this, deg)));
+      shape = rig.apply(shape);
+    }
     if (grounded) {
       let minY = Infinity;
       for (let i = 1; i < nV3; i += 3) minY = Math.min(minY, shape.positions[i]);

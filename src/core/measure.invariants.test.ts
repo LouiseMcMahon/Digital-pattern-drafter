@@ -14,8 +14,14 @@ beforeAll(async () => { body = await loadBodyFromDisk(); measurer = new Measurer
 
 const scaled = (s: BodyShape, k: number): BodyShape => ({ positions: s.positions.map((v) => v * k), joints: s.joints.map((v) => v * k) });
 
-/** Measurements that are pure functions of the geometry, so they scale exactly with the body. */
-const SCALE_COVARIANT: MeasurementName[] = MEASUREMENT_NAMES.filter((n) => !['thigh', 'highBust', 'armscyeDepth'].includes(n));
+/**
+ * Measurements with a fixed anatomical offset in their definition (the thigh ring 4 cm below the crotch, the
+ * shoulder point 1.5 cm outside the arm joint, the neck point 2.25 cm outside the neck, a +4 cm calibration):
+ * they scale nearly, not exactly, with the body.
+ */
+const WITH_FIXED_OFFSET: MeasurementName[] = ['thigh', 'highBust', 'armscyeDepth', 'shoulderWidth', 'shoulderLength', 'shoulderToBust', 'frontLength', 'upperArmLength', 'armLength'];
+/** Pure functions of the geometry, so they scale exactly with the body. */
+const SCALE_COVARIANT: MeasurementName[] = MEASUREMENT_NAMES.filter((n) => !WITH_FIXED_OFFSET.includes(n));
 
 describe('measurement definitions', () => {
   it('never throw when a section is missing: they return NaN, which the fit counts as a miss', () => {
@@ -46,6 +52,10 @@ describe('measurement definitions', () => {
     const b = measurer.measure(scaled(s, 1.1));
     for (const n of SCALE_COVARIANT) {
       expect(Math.abs(b[n] / a[n] - 1.1), `${n}: ${a[n].toFixed(2)} -> ${b[n].toFixed(2)}`).toBeLessThan(0.004);
+    }
+    // The ones with a small fixed offset still scale to within 1.5% (a definition that stopped scaling would not).
+    for (const n of WITH_FIXED_OFFSET.filter((x) => x !== 'armscyeDepth' && x !== 'thigh' && x !== 'highBust')) {
+      expect(Math.abs(b[n] / a[n] - 1.1), `${n}: ${a[n].toFixed(2)} -> ${b[n].toFixed(2)}`).toBeLessThan(0.015);
     }
   });
 

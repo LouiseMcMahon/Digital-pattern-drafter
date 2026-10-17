@@ -97,12 +97,10 @@ type Region = 'torso' | 'legs' | 'arms' | 'head';
 
 interface Landmarks {
   bustApex: [number, number]; // L, R vertex ids
-  shoulderPoint: [number, number];
   c7: number;
   hip: number;
   crotch: number;
   axilla: [number, number];
-  neckPoint: [number, number];
 }
 
 export class Measurer {
@@ -117,8 +115,12 @@ export class Measurer {
   private marks?: { name: string; point: Vec }[];
   private paths?: { name: string; points: number[] }[];
 
-  constructor(private readonly body: BodyModel) {
-    const mean = body.evaluate();
+  /**
+   * @param meanShape the body the landmarks are found on (default: the mean body in the tailor pose).
+   * Tests pass perturbed means to check that landmark detection is stable.
+   */
+  constructor(private readonly body: BodyModel, meanShape?: BodyShape) {
+    const mean = meanShape ?? body.evaluate();
     this.region = new Uint8Array(body.vertexCount);
     const names: Region[] = ['torso', 'legs', 'arms', 'head'];
     const boneRegion = body.boneLabels.map((l): Region => {
@@ -171,20 +173,6 @@ export class Measurer {
         const [x, y, z] = pos(i);
         if (side * x < 2 || side * x > 15 || y < waistY + 8 || y > waistY + 32) continue;
         if (z > bz) { bz = z; best = i; }
-      }
-      return best;
-    }) as [number, number];
-
-    // Shoulder point (acromion): topmost vertex 1.5 cm outside the arm joint (the glenohumeral
-    // joint sits slightly inside the bony acromion; the deltoid cap bulges well beyond it).
-    const shoulderPoint = (['L', 'R'] as const).map((s) => {
-      const j = b.joint(mean, `upperarm01.${s}`);
-      const cx = j[0] + (s === 'L' ? 1.5 : -1.5);
-      let best = -1;
-      let by = -Infinity;
-      for (let i = 0; i < b.vertexCount; i++) {
-        const [x, y, z] = pos(i);
-        if (this.region[i] !== 3 && Math.abs(x - cx) < 1.2 && Math.abs(z - j[2]) < 8 && y > j[1] && y < j[1] + 14 && y > by) { by = y; best = i; }
       }
       return best;
     }) as [number, number];
@@ -242,23 +230,48 @@ export class Measurer {
       return this.nearest(mean, m);
     }) as [number, number];
 
-    // Neck-shoulder point: top of the shoulder just outside the neck.
-    const nb0 = b.joint(mean, 'neck01');
-    const nk = this.limbLoop(mean, lerp(nb0, b.joint(mean, 'neck03'), 0.25), sub(b.joint(mean, 'neck03'), nb0));
-    let neckHalf = 0;
-    for (let i = 0; i < (nk?.points.length ?? 0); i += 3) neckHalf = Math.max(neckHalf, Math.abs(nk!.points[i]));
-    const neckPoint = ([1, -1] as const).map((side) => {
-      let best = -1;
-      let by = -Infinity;
-      for (let i = 0; i < b.vertexCount; i++) {
-        const [x, y, z] = pos(i);
-        if (this.region[i] === 3 || Math.abs(z - nb0[2]) > 4 || side * x < neckHalf + 1.5 || side * x > neckHalf + 3) continue;
-        if (y > by && y < nb0[1] + 6) { by = y; best = i; }
-      }
-      return best;
-    }) as [number, number];
+    return { bustApex: apex, c7, hip, crotch, axilla };
+  }
 
-    return { bustApex: apex, shoulderPoint, c7, hip, crotch, axilla, neckPoint };
+  /**
+   * Highest point of the surface above the line (x, *, z) with y between yLo and yHi, from a vertical slice at x.
+   * Computed from the live surface, so it is a continuous function of the body (a "highest vertex" search is
+   * not: on a flat shoulder the winner jumps along the shoulder by centimetres when the geometry moves a hair).
+   */
+  private topPoint(shape: BodyShape, x: number, z: number, yLo: number, yHi: number): Vec | undefined {
+    let best: Vec | undefined;
+    for (const l of slicePlane(shape.positions, this.body.faces, { point: [x, 0, 0], normal: [1, 0, 0] })) {
+      const p = l.points;
+      const n = p.length / 3;
+      const segs = l.closed ? n : n - 1;
+      for (let i = 0; i < segs; i++) {
+        const j = (i + 1) % n;
+        const [za, zb] = [p[3 * i + 2], p[3 * j + 2]];
+        if ((za - z) * (zb - z) > 0 || za === zb) continue;
+        const y = p[3 * i + 1] + ((z - za) / (zb - za)) * (p[3 * j + 1] - p[3 * i + 1]);
+        if (y > yLo && y < yHi && (!best || y > best[1])) best = [x, y, z];
+      }
+    }
+    return best;
+  }
+
+  /** Shoulder point (acromion): the top of the shoulder 1.5 cm outside the arm joint, straight above it. */
+  private shoulderPointOf(shape: BodyShape, side: 'L' | 'R'): Vec {
+    const j = this.body.joint(shape, `upperarm01.${side}`);
+    const x = j[0] + (side === 'L' ? 1.5 : -1.5);
+    return this.topPoint(shape, x, j[2], j[1], j[1] + 14) ?? [x, j[1] + 8, j[2]];
+  }
+
+  /** Neck-shoulder point: the top of the shoulder 2.25 cm outside the neck ring (live neck width), at the neck's depth. */
+  private neckPointOf(shape: BodyShape, side: 'L' | 'R'): Vec {
+    const b = this.body;
+    const nb = b.joint(shape, 'neck01');
+    const nm = b.joint(shape, 'neck03');
+    const ring = this.limbLoop(shape, lerp(nb, nm, 0.25), sub(nm, nb), 20);
+    let half = 6;
+    if (ring) { half = 0; for (let i = 0; i < ring.points.length; i += 3) half = Math.max(half, Math.abs(ring.points[i])); }
+    const x = (side === 'L' ? 1 : -1) * (half + 2.25);
+    return this.topPoint(shape, x, nb[2], nb[1] - 8, nb[1] + 6) ?? [x, nb[1], nb[2]];
   }
 
   /**
@@ -427,8 +440,8 @@ export class Measurer {
       const add = (name: string, id: number) => this.marks!.push({ name, point: P(id) });
       add('nape C7', lm.c7);
       add('axilla L', lm.axilla[0]); add('axilla R', lm.axilla[1]);
-      add('neck point L', lm.neckPoint[0]); add('neck point R', lm.neckPoint[1]);
-      add('shoulder point L', lm.shoulderPoint[0]); add('shoulder point R', lm.shoulderPoint[1]);
+      this.marks!.push({ name: 'neck point L', point: this.neckPointOf(shape, 'L') }, { name: 'neck point R', point: this.neckPointOf(shape, 'R') });
+      this.marks!.push({ name: 'shoulder point L', point: this.shoulderPointOf(shape, 'L') }, { name: 'shoulder point R', point: this.shoulderPointOf(shape, 'R') });
       add('bust apex L', lm.bustApex[0]); add('bust apex R', lm.bustApex[1]);
       add('crotch', lm.crotch); add('hip level', lm.hip);
       return { values, rings: this.record as { name: MeasurementName; points: number[] }[], marks: this.marks, paths: this.paths };
@@ -451,6 +464,11 @@ export class Measurer {
     const apexY = (P(lm.bustApex[0])[1] + P(lm.bustApex[1])[1]) / 2;
     const ring = (y: number) => { const l = this.centralTorsoLoop(shape, y); return l ? loopLength(l) : NaN; };
     const avg = (f: (s: 'L' | 'R') => number) => (f('L') + f('R')) / 2;
+    // Shoulder and neck points come from the live surface; computed once per call and only if used.
+    const spc: Partial<Record<'L' | 'R', Vec>> = {};
+    const npc: Partial<Record<'L' | 'R', Vec>> = {};
+    const SP = (i: 0 | 1): Vec => (spc[i ? 'R' : 'L'] ??= this.shoulderPointOf(shape, i ? 'R' : 'L'));
+    const NP = (i: 0 | 1): Vec => (npc[i ? 'R' : 'L'] ??= this.neckPointOf(shape, i ? 'R' : 'L'));
     const limb = (a: string, c: string, t: number) => (s: 'L' | 'R') => {
       const [ja, jc] = [J(`${a}.${s}`), J(`${c}.${s}`)];
       return this.limbRing(shape, lerp(ja, jc, t), sub(jc, ja));
@@ -462,7 +480,7 @@ export class Measurer {
     const nb = J('neck01');
     const nm = J('neck03');
     if (want('neck')) out.neck = this.limbRing(shape, lerp(nb, nm, 0.25), sub(nm, nb), 20);
-    out.shoulderWidth = norm(sub(P(lm.shoulderPoint[0]), P(lm.shoulderPoint[1])));
+    out.shoulderWidth = norm(sub(SP(0), SP(1)));
     if (want('bust')) out.bust = ring(apexY);
     if (want('underbust')) out.underbust = ring(apexY - 0.28 * (apexY - waistY));
     if (want('waist')) out.waist = ring(waistY);
@@ -481,10 +499,10 @@ export class Measurer {
     if (want('calf')) out.calf = avg(limb('lowerleg01', 'foot', 0.3));
     if (want('ankle')) out.ankle = avg(limb('lowerleg01', 'foot', 0.88));
     if (want('napeToWaist')) out.napeToWaist = this.arcBetweenLevels(shape, 0, P(lm.c7)[1], waistY, false);
-    const shoulderY = (P(lm.shoulderPoint[0])[1] + P(lm.shoulderPoint[1])[1]) / 2;
+    const shoulderY = (SP(0)[1] + SP(1)[1]) / 2;
     if (want('frontLength')) out.frontLength = avg((s) => this.arcBetweenLevels(shape, P(lm.bustApex[s === 'L' ? 0 : 1])[0], shoulderY, waistY, true));
     out.bustSeparation = norm(sub(P(lm.bustApex[0]), P(lm.bustApex[1])));
-    out.armLength = avg((s) => norm(sub(P(lm.shoulderPoint[s === 'L' ? 0 : 1]), J(`lowerarm01.${s}`))) + norm(sub(J(`lowerarm01.${s}`), J(`wrist.${s}`))));
+    out.armLength = avg((s) => norm(sub(SP(s === 'L' ? 0 : 1), J(`lowerarm01.${s}`))) + norm(sub(J(`lowerarm01.${s}`), J(`wrist.${s}`))));
     out.insideLeg = P(lm.crotch)[1];
     out.waistHeight = waistY;
 
@@ -498,8 +516,8 @@ export class Measurer {
       out.acrossBack = c ? norm(sub(c.backL, c.backR)) : NaN;
       out.acrossChest = c ? norm(sub(c.frontL, c.frontR)) : NaN;
     }
-    if (want('shoulderLength')) out.shoulderLength = avg((s) => this.surfaceArc(shape, P(lm.neckPoint[s === 'L' ? 0 : 1]), P(lm.shoulderPoint[s === 'L' ? 0 : 1])));
-    if (want('shoulderToBust')) out.shoulderToBust = avg((s) => this.surfaceArc(shape, P(lm.neckPoint[s === 'L' ? 0 : 1]), P(lm.bustApex[s === 'L' ? 0 : 1])));
+    if (want('shoulderLength')) out.shoulderLength = avg((s) => this.surfaceArc(shape, NP(s === 'L' ? 0 : 1), SP(s === 'L' ? 0 : 1)));
+    if (want('shoulderToBust')) out.shoulderToBust = avg((s) => this.surfaceArc(shape, NP(s === 'L' ? 0 : 1), P(lm.bustApex[s === 'L' ? 0 : 1])));
     out.bustHeight = apexY;
     out.waistToHip = waistY - hipY;
     out.crotchDepth = waistY - P(lm.crotch)[1];
@@ -508,7 +526,7 @@ export class Measurer {
       const outline = loops.sort((a, c) => loopLength(c) - loopLength(a))[0];
       out.crotchLength = outline ? this.arcAtWaist(outline, waistY) : NaN;
     }
-    out.upperArmLength = avg((s) => norm(sub(P(lm.shoulderPoint[s === 'L' ? 0 : 1]), J(`lowerarm01.${s}`))));
+    out.upperArmLength = avg((s) => norm(sub(SP(s === 'L' ? 0 : 1), J(`lowerarm01.${s}`))));
     out.forearmLength = avg((s) => norm(sub(J(`lowerarm01.${s}`), J(`wrist.${s}`))));
     out.underarmLength = avg((s) => norm(sub(P(lm.axilla[s === 'L' ? 0 : 1]), J(`wrist.${s}`))));
     for (const [n, off] of Object.entries(CALIBRATION)) if (out[n as MeasurementName] !== undefined) out[n as MeasurementName] += off;

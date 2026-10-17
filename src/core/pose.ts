@@ -54,7 +54,8 @@ function rotationBetween(a: V3, b: V3): M3 {
 export class TailorPoseRig {
   private readonly chains = new Map<string, { bones: Set<number>; weight: Float64Array }>();
 
-  constructor(private readonly body: BodyModel) {}
+  /** @param armDegrees arm angle from vertical; only tests vary it (stability of landmark detection). */
+  constructor(private readonly body: BodyModel, private readonly armDegrees: number = TAILOR_POSE.armDegreesFromVertical) {}
 
   private chain(root: string) {
     let c = this.chains.get(root);
@@ -94,7 +95,7 @@ export class TailorPoseRig {
       }
     };
 
-    const a = (TAILOR_POSE.armDegreesFromVertical * Math.PI) / 180;
+    const a = (this.armDegrees * Math.PI) / 180;
     for (const side of ['L', 'R'] as const) {
       const sign = side === 'L' ? 1 : -1;
       // Arm: swing the whole arm down, then straighten the elbow along the same line.
