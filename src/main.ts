@@ -1,9 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
+import { area, cutMesh, locateInCut, regionFrom } from './core/cut';
+import { uniformEase } from './core/ease';
 import type { FitTargets } from './core/fit';
+import { flatten } from './core/flatten';
+import { boundaryLoops, extractSubmesh } from './core/mesh';
 import { FIXTURES } from './core/fixtures';
-import { type Seam, type SnapTarget, SurfaceGraph, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
+import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
 
@@ -24,6 +28,10 @@ controls.innerHTML = `
   <h4>Seams</h4>
   <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green) and to the ends of other seams.</label><br>
   <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-clear">Clear all</button>
+  <h4>Panels</h4>
+  <button id="panel-pick">Make a panel: click inside seams</button> <button id="panel-clear">Clear panels</button>
+  <div id="panels" style="margin-top:4px"></div>
+  <svg id="flat" width="340" height="1" style="margin-top:4px;background:#fff;border:1px solid #ccc;display:none"></svg>
   <div id="snap" style="margin-top:4px;color:#555;min-height:1.2em"></div>
   <div id="seams" style="margin-top:4px"></div>
   <div id="status">Loading body model…</div>`;
@@ -64,6 +72,8 @@ const seamGroup = new THREE.Group();
 scene.add(seamGroup);
 const landmarkGroup = new THREE.Group(); // snap targets, shown while drawing
 scene.add(landmarkGroup);
+const panelGroup = new THREE.Group(); // panels tinted on the body
+scene.add(panelGroup);
 
 const VIEWS: Record<string, [number, number, number, number, number, number]> = {
   // camera x,y,z then target x,y,z
@@ -149,6 +159,7 @@ function show(params: BodyParams) {
   drawLines($<HTMLInputElement>('lines').checked ? info : undefined);
   drawLandmarks();
   drawSeams();
+  if (panels.length) refreshPanels();
   render();
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
   return m;
@@ -179,7 +190,79 @@ function drawSeams() {
   $('seams').innerHTML = rows.join('<br>') || '<span style="color:#555">No seams yet.</span>';
 }
 const activeSeam = () => seams[seams.length - 1];
-const redrawSeams = () => { drawSeams(); render(); };
+const redrawSeams = () => { drawSeams(); render(); if (panels.length) refreshPanels(); };
+
+// Panels: a region of the body enclosed by seams. Each is remembered by a point inside it (so it follows the seams
+// and the body), cut out of the mesh, tinted on the body and flattened with its own ease.
+interface Panel { seed: SurfacePoint; horizontal: number; vertical: number }
+let panels: Panel[] = [];
+let pickingPanel = false;
+const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
+const MAX_PANEL_SHARE = 0.6; // a region bigger than this share of the body is not enclosed by the seams
+
+function derivePanels() {
+  const original = bodyMesh();
+  const cut = cutMesh(original, graph, seams);
+  const everything = area(cut.mesh, Array.from({ length: cut.mesh.triangles.length / 3 }, (_, i) => i));
+  return panels.map((panel) => {
+    const triangles = regionFrom(cut, locateInCut(cut, original, panel.seed));
+    const size = area(cut.mesh, triangles);
+    if (size > MAX_PANEL_SHARE * everything) return { panel, triangles, cut, size, error: 'The seams do not enclose this area (add seams until it is closed in).' };
+    const sub = extractSubmesh(cut.mesh, triangles);
+    const loops = boundaryLoops(sub.mesh);
+    if (loops.length !== 1) return { panel, triangles, cut, size, error: `This area has ${loops.length} edges, so it cannot lie flat. A panel that goes right round a limb needs a seam along it.` };
+    return { panel, triangles, cut, size, sub, loop: loops[0] };
+  });
+}
+
+function refreshPanels() {
+  for (const c of [...panelGroup.children]) { panelGroup.remove(c); disposeTree(c); }
+  const svg = $<SVGSVGElement & HTMLElement>('flat');
+  const rows: string[] = [];
+  if (panels.length === 0) { $('panels').innerHTML = '<span style="color:#555">No panels yet.</span>'; svg.style.display = 'none'; render(); return; }
+  const shapes: string[] = [];
+  let x = 0;
+  let top = 0;
+  derivePanels().forEach((d, i) => {
+    const color = PANEL_COLORS[i % PANEL_COLORS.length];
+    const hex = '#' + color.toString(16).padStart(6, '0');
+    const ease = `<label>Panel ${i + 1} ease % across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal" style="width:48px"></label> <label>down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical" style="width:48px"></label> <button data-delete-panel="${i}">Remove</button>`;
+    if (!d.sub) { rows.push(`<span style="color:#c00">${ease}<br>${d.error}</span>`); return; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.cut.mesh.positions), 3));
+    g.setIndex(new THREE.BufferAttribute(Uint32Array.from(d.triangles.flatMap((t) => [0, 1, 2].map((k) => d.cut.mesh.triangles[3 * t + k]))), 1));
+    panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
+    const flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    const xs = d.loop.map((v) => flat.uv[2 * v]);
+    const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
+    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map((v) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`).join('L')}Z"/>`);
+    x += x1 - x0 + 4;
+    top = Math.max(top, y1 - y0);
+    const warn = flat.flippedTriangles > 0 ? ` <span style="color:#c00">${flat.flippedTriangles} flipped triangles</span>` : '';
+    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; edge length error ${(100 * flat.rmsEdgeError).toFixed(1)}%${warn}</span>`);
+  });
+  $('panels').innerHTML = rows.join('<br>');
+  svg.style.display = shapes.length ? 'block' : 'none';
+  if (shapes.length) {
+    svg.setAttribute('viewBox', `-1 -1 ${(x + 2).toFixed(1)} ${(top + 2).toFixed(1)}`);
+    svg.setAttribute('height', String(Math.min(400, Math.max(60, (340 * (top + 2)) / (x + 2)))));
+    svg.innerHTML = shapes.join('');
+  }
+  $('panels').querySelectorAll<HTMLInputElement>('input[data-panel]').forEach((el) => {
+    el.onchange = () => { panels[Number(el.dataset.panel)][el.dataset.axis as 'horizontal' | 'vertical'] = Number(el.value) || 0; refreshPanels(); };
+  });
+  $('panels').querySelectorAll<HTMLButtonElement>('button[data-delete-panel]').forEach((el) => {
+    el.onclick = () => { panels.splice(Number(el.dataset.deletePanel), 1); refreshPanels(); };
+  });
+  render();
+}
+$('panel-pick').onclick = () => {
+  pickingPanel = !pickingPanel;
+  $('panel-pick').textContent = pickingPanel ? 'Click inside a closed set of seams… (click again to cancel)' : 'Make a panel: click inside seams';
+  renderer.domElement.style.cursor = pickingPanel ? 'crosshair' : '';
+};
+$('panel-clear').onclick = () => { panels = []; refreshPanels(); };
 
 function drawLandmarks() {
   for (const c of [...landmarkGroup.children]) { landmarkGroup.remove(c); disposeTree(c); }
@@ -208,7 +291,7 @@ const pixelCm = (at: [number, number, number]) =>
   (2 * camera.position.distanceTo(new THREE.Vector3(...at)) * Math.tan((camera.fov * Math.PI) / 360)) / renderer.domElement.clientHeight;
 const SNAP_PIXELS = 10;
 const GRAB_PIXELS = 8;
-const drawing = () => $<HTMLInputElement>('draw').checked && !!body;
+const drawing = () => $<HTMLInputElement>('draw').checked && !!body && !pickingPanel;
 
 /** Snap targets for a new or moved point: the landmarks, and every other seam point (so seams can meet). */
 function targets(skip?: { seam: number; index: number }): SnapTarget[] {
@@ -276,19 +359,28 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     const snapped = snapAt(e, hit, dragging);
     seams[dragging.seam].points[dragging.index] = snapped.point;
     setSnapNote(snapped.target);
-    redrawSeams();
+    drawSeams(); // the panels are re-cut when the drag ends, not on every move
+    render();
     return;
   }
   renderer.domElement.style.cursor = hit && grabAt(e, hit) ? 'grab' : '';
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (dragging) { dragging = undefined; renderer.domElement.releasePointerCapture(e.pointerId); return; }
+  if (dragging) { dragging = undefined; renderer.domElement.releasePointerCapture(e.pointerId); if (panels.length) refreshPanels(); return; }
   const start = down;
   down = undefined;
-  if (!start || !drawing()) return;
+  if (!start || !body || !($<HTMLInputElement>('draw').checked || pickingPanel)) return;
   if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
   const hit = pick(e);
   if (!hit) return;
+  if (pickingPanel) {
+    panels.push({ seed: hit.surface, horizontal: 0, vertical: 0 });
+    pickingPanel = false;
+    $('panel-pick').textContent = 'Make a panel: click inside seams';
+    renderer.domElement.style.cursor = '';
+    refreshPanels();
+    return;
+  }
   if (!activeSeam() || activeSeam().closed) seams.push({ points: [], closed: false });
   const snapped = snapAt(e, hit);
   activeSeam().points.push(snapped.point);
@@ -307,6 +399,11 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const p = seams[seam]?.points[index];
   if (!p) return undefined;
   const v = new THREE.Vector3(...pointOnSurface(bodyMesh(), p)).project(camera);
+  const rect = renderer.domElement.getBoundingClientRect();
+  return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+};
+(window as unknown as Record<string, unknown>).screenOfPoint = (p: [number, number, number]) => {
+  const v = new THREE.Vector3(...p).project(camera);
   const rect = renderer.domElement.getBoundingClientRect();
   return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
 };

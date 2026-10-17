@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [slice, pose, bodyModel, flatten, mesh, ease, lscm, body, seam]
+        module: [slice, pose, bodyModel, flatten, mesh, ease, lscm, body, seam, cut]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

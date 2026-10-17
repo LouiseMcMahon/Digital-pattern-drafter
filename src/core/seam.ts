@@ -149,6 +149,12 @@ export function findControlPoint(m: Mesh, seams: readonly Seam[], distance: (poi
   return best;
 }
 
+/** A place on the mesh: at a vertex, on the edge between two vertices (a < b) at fraction t from a, or inside a triangle. */
+export type PathNode =
+  | { kind: 'vertex'; vertex: number }
+  | { kind: 'edge'; a: number; b: number; t: number }
+  | { kind: 'face'; point: SurfacePoint };
+
 /** Minimal binary min-heap of (key, node). */
 export class Heap {
   private keys: number[] = [];
@@ -248,11 +254,8 @@ export class SurfaceGraph {
     return node < this.nv ? this.vertexTris[node] : this.edgeTris[Math.floor((node - this.nv) / this.steiner)];
   }
 
-  /**
-   * The shortest path over the surface from a to b, as an xyz polyline that starts at a and ends at b.
-   * Its length is within a few percent of the true geodesic and never shorter than it.
-   */
-  path(positions: Float64Array, a: SurfacePoint, b: SurfacePoint): number[] {
+  /** The graph nodes of the shortest route from a to b (see `path`); `straight` when one triangle holds both points. */
+  private route(positions: Float64Array, a: SurfacePoint, b: SurfacePoint): number[] {
     const m: Mesh = { positions, triangles: this.triangles };
     const [pa, pb] = [pointOnSurface(m, a), pointOnSurface(m, b)];
     let best = a.tri === b.tri ? len(sub(pa, pb)) : Infinity;
@@ -285,11 +288,34 @@ export class SurfaceGraph {
 
     const nodes: number[] = [];
     for (let n = bestLast; n >= 0; n = prev[n]) nodes.push(n);
-    nodes.reverse();
-    const out: number[] = [...pa];
-    for (const n of nodes) out.push(...this.position(positions, n));
-    out.push(...pb);
+    return nodes.reverse();
+  }
+
+  /**
+   * The shortest path over the surface from a to b, as an xyz polyline that starts at a and ends at b.
+   * Its length is within a few percent of the true geodesic and never shorter than it.
+   */
+  path(positions: Float64Array, a: SurfacePoint, b: SurfacePoint): number[] {
+    const m: Mesh = { positions, triangles: this.triangles };
+    const out: number[] = [...pointOnSurface(m, a)];
+    for (const n of this.route(positions, a, b)) out.push(...this.position(positions, n));
+    out.push(...pointOnSurface(m, b));
     return out;
+  }
+
+  /**
+   * The same path as `path`, as places on the mesh: the start, then each mesh vertex or point on a mesh edge it
+   * passes through, then the end. Consecutive entries lie in one triangle, joined by a straight segment (this is what
+   * cutting the mesh along a seam needs).
+   */
+  pathNodes(positions: Float64Array, a: SurfacePoint, b: SurfacePoint): PathNode[] {
+    const mid = this.route(positions, a, b).map((n): PathNode => {
+      if (n < this.nv) return { kind: 'vertex', vertex: n };
+      const rel = n - this.nv;
+      const e = Math.floor(rel / this.steiner);
+      return { kind: 'edge', a: this.edgeVerts[2 * e], b: this.edgeVerts[2 * e + 1], t: ((rel % this.steiner) + 1) / (this.steiner + 1) };
+    });
+    return [{ kind: 'face', point: a }, ...mid, { kind: 'face', point: b }];
   }
 
   /** The polyline of a whole seam: the shortest path between each consecutive pair of control points. */

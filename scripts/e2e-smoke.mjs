@@ -118,6 +118,36 @@ try {
   const deleted = await page.evaluate(() => window.seamState());
   if (deleted[0].points.length !== 1) fail('shift-click on a point did not delete it');
   await page.locator('#three').screenshot({ path: 'e2e-out/snap-drag.png' });
+
+  // Panels: close a loop of seams round the front of the torso, click inside it, and get a flat panel of a
+  // plausible size (the body's front torso is about 40 cm wide and 55 cm tall).
+  await page.click('#seam-clear');
+  await page.evaluate(() => window.setView('front'));
+  await page.waitForTimeout(300);
+  const axL = await at('axilla L');
+  const axR = await at('axilla R');
+  const neckL = await at('neck point L');
+  const neckR = await at('neck point R');
+  await page.mouse.click(neckL.x + 1, neckL.y + 1);
+  await page.mouse.click(...(({ x, y }) => [x + 1, y + 1])(await at('shoulder point L')));
+  await page.mouse.click(axL.x + 1, axL.y + 1);
+  await page.mouse.click(axL.x - 6, axL.y + 170);
+  await page.mouse.click((axL.x + axR.x) / 2, axL.y + 185);
+  await page.mouse.click(axR.x + 6, axR.y + 170);
+  await page.mouse.click(axR.x + 1, axR.y + 1);
+  await page.mouse.click(...(({ x, y }) => [x + 1, y + 1])(await at('shoulder point R')));
+  await page.mouse.click(neckR.x + 1, neckR.y + 1);
+  await page.mouse.click((neckL.x + neckR.x) / 2, (neckL.y + neckR.y) / 2 + 14);
+  await page.click('#seam-close');
+  await page.click('#panel-pick');
+  await page.mouse.click((axL.x + axR.x) / 2, axL.y + 60);
+  await page.waitForFunction(() => document.getElementById('panels')?.textContent?.includes('cm flat'), null, { timeout: 60000 })
+    .catch(async () => fail(`no panel was made from the closed seams: "${await page.$eval('#panels', (e) => e.textContent)}"`));
+  const panelText = await page.$eval('#panels', (e) => e.textContent);
+  const dims = /([0-9.]+) x ([0-9.]+) cm flat, ([0-9]+) cm² on the body; edge length error ([0-9.]+)%/.exec(panelText);
+  if (!dims || !(dims[1] > 30 && dims[1] < 55 && dims[2] > 45 && dims[2] < 70 && dims[4] < 15)) fail(`the front torso panel has an implausible size or distortion: "${panelText}"`);
+  if (await page.$eval('#flat', (e) => getComputedStyle(e).display) === 'none') fail('the flat panel was not drawn');
+  await page.locator('#flat').screenshot({ path: 'e2e-out/panel-flat.png' });
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,
