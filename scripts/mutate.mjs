@@ -8,7 +8,8 @@ const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
   pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts', 'src/core/pose.test.ts'] },
   flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts'] },
-  bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.test.ts', 'src/core/body.test.ts'] },
+  // pose.test.ts covers the default-pose path through evaluate() on the real body.
+  bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts', 'src/core/pose.test.ts'] },
 };
 
 const args = process.argv.slice(2);
