@@ -68,6 +68,87 @@ export function snapToVertex(m: Mesh, p: SurfacePoint, radius: number): SurfaceP
   return best < 0 ? p : vertexPoint(m, best);
 }
 
+/**
+ * The point of triangle (a, b, c) closest to p, as barycentric weights (Ericson, Real-Time Collision Detection 5.1.5).
+ * Works for p above or below the triangle, and clamps to an edge or corner when p projects outside.
+ */
+export function closestBary(p: Vec3, a: Vec3, b: Vec3, c: Vec3): Vec3 {
+  const ab = sub(b, a);
+  const ac = sub(c, a);
+  const ap = sub(p, a);
+  const d1 = dot(ab, ap);
+  const d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return [1, 0, 0];
+  const bp = sub(p, b);
+  const d3 = dot(ab, bp);
+  const d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return [0, 1, 0];
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) { const v = d1 / (d1 - d3); return [1 - v, v, 0]; }
+  const cp = sub(p, c);
+  const d5 = dot(ab, cp);
+  const d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return [0, 0, 1];
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) { const w = d2 / (d2 - d6); return [1 - w, 0, w]; }
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) { const w = (d4 - d3) / (d4 - d3 + (d5 - d6)); return [0, 1 - w, w]; }
+  const denom = 1 / (va + vb + vc);
+  const v = vb * denom;
+  const w = vc * denom;
+  return [1 - v - w, v, w];
+}
+
+/** The point on the mesh surface closest to a point in space, and how far away it is. */
+export function closestSurfacePoint(m: Mesh, p: Vec3): SurfacePoint & { distance: number } {
+  let best: (SurfacePoint & { distance: number }) | undefined;
+  for (let tri = 0; tri < m.triangles.length / 3; tri++) {
+    const [a, b, c] = [0, 1, 2].map((k) => getVertex(m, m.triangles[3 * tri + k]));
+    const bary = closestBary(p, a, b, c);
+    const q: Vec3 = [0, 1, 2].map((k) => bary[0] * a[k] + bary[1] * b[k] + bary[2] * c[k]) as Vec3;
+    const distance = len(sub(q, p));
+    if (!best || distance < best.distance) best = { tri, bary, distance };
+  }
+  if (!best) throw new Error('Mesh has no triangles');
+  return best;
+}
+
+/** A named place a seam point can snap to (a landmark such as the neck point, or the end of another seam). */
+export interface SnapTarget {
+  name: string;
+  point: Vec3;
+}
+
+/**
+ * Snaps a surface point to the nearest target within `radius` (cm), else to a mesh vertex within `vertexRadius`,
+ * else leaves it. Targets win over vertices because a landmark is rarely exactly on a vertex.
+ */
+export function snapPoint(m: Mesh, p: SurfacePoint, targets: readonly SnapTarget[], radius: number, vertexRadius = radius): { point: SurfacePoint; target?: string } {
+  const at = pointOnSurface(m, p);
+  let best: SnapTarget | undefined;
+  let bd = radius;
+  for (const t of targets) {
+    const d = len(sub(t.point, at));
+    if (d <= bd) { bd = d; best = t; }
+  }
+  if (best) return { point: closestSurfacePoint(m, best.point), target: best.name };
+  return { point: snapToVertex(m, p, vertexRadius) };
+}
+
+/**
+ * The control point (seam and index) nearest under a caller-supplied distance, within `radius`. The viewer measures
+ * distance on screen (what the user sees), tests measure it in space.
+ */
+export function findControlPoint(m: Mesh, seams: readonly Seam[], distance: (point: Vec3) => number, radius: number): { seam: number; index: number } | undefined {
+  let best: { seam: number; index: number } | undefined;
+  let bd = radius;
+  seams.forEach((seam, si) => seam.points.forEach((pt, i) => {
+    const d = distance(pointOnSurface(m, pt));
+    if (d <= bd) { bd = d; best = { seam: si, index: i }; }
+  }));
+  return best;
+}
+
 /** Minimal binary min-heap of (key, node). */
 export class Heap {
   private keys: number[] = [];

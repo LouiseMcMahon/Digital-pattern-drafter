@@ -81,6 +81,43 @@ try {
   const seamText = await page.$eval('#seams', (e) => e.textContent);
   const seamLen = /Seam 1 \(drawing\): 3 points, ([0-9.]+) cm/.exec(seamText);
   if (!seamLen || !(parseFloat(seamLen[1]) > 20)) fail(`three clicks on the body did not make a seam of plausible length: "${seamText}"`);
+
+  // Snapping and dragging: a click a few pixels from the neck point lands on it; dragging that point to near the
+  // bust apex snaps there and does not turn the view; shift-click deletes a point.
+  await page.click('#seam-clear');
+  await page.evaluate(() => window.setView('front'));
+  await page.waitForTimeout(300);
+  const at = (name) => page.evaluate((n) => window.screenOf(n), name);
+  const snapNote = () => page.$eval('#snap', (e) => e.textContent);
+  const neck = await at('neck point L');
+  const apex = await at('bust apex L');
+  const shoulder = await at('shoulder point L');
+  if (!neck || !apex || !shoulder) fail('the page did not offer neck, bust apex and shoulder point landmarks');
+  await page.mouse.click(neck.x + 3, neck.y + 3);
+  if (!(await snapNote()).includes('neck point L')) fail(`a click near the neck point did not snap to it: "${await snapNote()}"`);
+  await page.mouse.click(shoulder.x + 3, shoulder.y + 3);
+  if (!(await snapNote()).includes('shoulder point L')) fail(`a click near the shoulder point did not snap to it: "${await snapNote()}"`);
+  const before = await page.evaluate(() => window.seamState());
+  if (before.length !== 1 || before[0].points.length !== 2) fail('expected one seam with two points before dragging');
+  await page.mouse.move(shoulder.x, shoulder.y);
+  await page.mouse.down();
+  await page.mouse.move(apex.x + 60, apex.y - 40, { steps: 4 });
+  await page.mouse.move(apex.x + 3, apex.y + 3, { steps: 4 });
+  await page.mouse.up();
+  const after = await page.evaluate(() => window.seamState());
+  const moved = Math.hypot(...after[0].points[1].map((v, i) => v - before[0].points[1][i]));
+  if (!(moved > 5)) fail(`dragging the second point did not move it (moved ${moved.toFixed(2)} cm)`);
+  if (!(await snapNote()).includes('bust apex L')) fail(`dragging near the bust apex did not snap to it: "${await snapNote()}"`);
+  const same = Math.hypot(...after[0].points[0].map((v, i) => v - before[0].points[0][i]));
+  if (same > 1e-9) fail('dragging one point moved another');
+  const apexAfter = await at('bust apex L');
+  if (Math.hypot(apexAfter.x - apex.x, apexAfter.y - apex.y) > 0.5) fail('dragging a seam point turned the view');
+  await page.keyboard.down('Shift');
+  await page.mouse.click(neck.x + 1, neck.y + 1);
+  await page.keyboard.up('Shift');
+  const deleted = await page.evaluate(() => window.seamState());
+  if (deleted[0].points.length !== 1) fail('shift-click on a point did not delete it');
+  await page.locator('#three').screenshot({ path: 'e2e-out/snap-drag.png' });
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,

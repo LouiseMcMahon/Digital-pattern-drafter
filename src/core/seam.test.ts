@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Vec3 } from './mesh';
-import { Heap, type Seam, type SurfacePoint, SurfaceGraph, pointOnSurface, polylineLength, raycast, snapToVertex, vertexPoint } from './seam';
+import { Heap, closestBary, type Seam, type SnapTarget, closestSurfacePoint, findControlPoint, snapPoint, type SurfacePoint, SurfaceGraph, pointOnSurface, polylineLength, raycast, snapToVertex, vertexPoint } from './seam';
 
 /** n x n unit squares in z = 0 (side `size`), each cut along one diagonal. Vertex (i, j) has id j * (n + 1) + i. */
 function grid(n: number, size = 1): Mesh {
@@ -311,5 +311,179 @@ describe('SurfaceGraph.path through a shared vertex', () => {
     expect(polylineLength(p)).toBeCloseTo(2 * Math.hypot(0.4, 0.4), 9);
     expect(p).toContain(0);
     expect(p.length).toBe(9);
+  });
+});
+
+describe('closestSurfacePoint', () => {
+  const m = grid(1, 2); // triangle 0 = (0,0) (2,0) (2,2); triangle 1 = (0,0) (2,2) (0,2)
+  it('projects a point above the surface straight down, and reports the height', () => {
+    const c = closestSurfacePoint(m, [1.5, 0.5, 3]);
+    expect(c.tri).toBe(0);
+    expect(c.distance).toBeCloseTo(3, 12);
+    const q = pointOnSurface(m, c);
+    expect(q[0]).toBeCloseTo(1.5, 12);
+    expect(q[1]).toBeCloseTo(0.5, 12);
+    expect(q[2]).toBeCloseTo(0, 12);
+  });
+  it('works from below too', () => {
+    const c = closestSurfacePoint(m, [0.5, 1.5, -2]);
+    expect(c.tri).toBe(1);
+    expect(c.distance).toBeCloseTo(2, 12);
+  });
+  it('clamps to the nearest edge and corner when the point is off the mesh', () => {
+    const edge = closestSurfacePoint(m, [1, -1, 0]); // below the bottom edge
+    expect(pointOnSurface(m, edge)).toEqual([1, 0, 0]);
+    expect(edge.distance).toBeCloseTo(1, 12);
+    const corner = closestSurfacePoint(m, [5, 6, 0]);
+    expect(pointOnSurface(m, corner)).toEqual([2, 2, 0]);
+    expect(corner.distance).toBeCloseTo(5, 12);
+    const origin = closestSurfacePoint(m, [-3, -4, 0]);
+    expect(pointOnSurface(m, origin)).toEqual([0, 0, 0]);
+    expect(origin.distance).toBeCloseTo(5, 12);
+  });
+  it('clamps to the other edges of a triangle (the diagonal and the right-hand side)', () => {
+    const diag = closestSurfacePoint(m, [1.5, 0.5, 0]); // inside triangle 0, near the diagonal x = y
+    expect(diag.distance).toBeCloseTo(0, 12);
+    const side = closestSurfacePoint(m, [3, 1, 0]);
+    expect(pointOnSurface(m, side)).toEqual([2, 1, 0]);
+    expect(side.distance).toBeCloseTo(1, 12);
+    const top = closestSurfacePoint(m, [1, 3, 0]);
+    expect(pointOnSurface(m, top)).toEqual([1, 2, 0]);
+  });
+  it('picks the nearer of two surfaces', () => {
+    const two: Mesh = {
+      positions: Float64Array.from([0, 0, 0, 4, 0, 0, 0, 4, 0, 0, 0, 5, 4, 0, 5, 0, 4, 5]),
+      triangles: Uint32Array.from([0, 1, 2, 3, 4, 5]),
+    };
+    expect(closestSurfacePoint(two, [1, 1, 4]).tri).toBe(1);
+    expect(closestSurfacePoint(two, [1, 1, 1]).tri).toBe(0);
+  });
+  it('refuses an empty mesh', () => {
+    expect(() => closestSurfacePoint({ positions: new Float64Array(0), triangles: new Uint32Array(0) }, [0, 0, 0])).toThrow();
+  });
+});
+
+describe('snapPoint', () => {
+  const m = grid(2, 2); // 1 cm squares
+  const mid: SurfacePoint = raycast(m, [0.62, 0.55, 3], [0, 0, -1])!; // near the centre of the 2 x 2 patch, away from every vertex
+  const neck: SnapTarget = { name: 'neck point', point: [0.8, 0.5, 0.4] }; // 0.4 above the surface
+  it('snaps to a landmark within the radius, landing on the surface under it', () => {
+    const r = snapPoint(m, mid, [neck], 0.5);
+    expect(r.target).toBe('neck point');
+    const q = pointOnSurface(m, r.point);
+    expect(q[0]).toBeCloseTo(0.8, 12);
+    expect(q[1]).toBeCloseTo(0.5, 12);
+    expect(q[2]).toBeCloseTo(0, 12);
+  });
+  it('leaves the point alone beyond the radius', () => {
+    const r = snapPoint(m, mid, [neck], 0.1, 0.05);
+    expect(r.target).toBeUndefined();
+    expect(r.point).toBe(mid);
+  });
+  it('picks the nearest of several landmarks', () => {
+    const near: SnapTarget = { name: 'near', point: [0.6, 0.5, 0] };
+    const r = snapPoint(m, mid, [neck, near], 0.5);
+    expect(r.target).toBe('near');
+  });
+  it('prefers a landmark to a vertex that is also in range', () => {
+    const nearVertex = vertexPoint(m, 4);
+    const t: SnapTarget = { name: 'lm', point: [1.1, 1, 0] };
+    expect(snapPoint(m, nearVertex, [t], 0.5).target).toBe('lm');
+  });
+  it('falls back to a vertex within the vertex radius, and uses the target radius only for targets', () => {
+    const nearCorner = raycast(m, [1.02, 0.99, 3], [0, 0, -1])!; // 0.03 from the centre vertex (1, 1)
+    const r = snapPoint(m, nearCorner, [], 0.05, 0.1);
+    expect(r.target).toBeUndefined();
+    expect(pointOnSurface(m, r.point)).toEqual([1, 1, 0]);
+    const far = snapPoint(m, nearCorner, [], 0.5, 0.01);
+    expect(far.point).toBe(nearCorner);
+  });
+  it('snaps when the distance is exactly the radius', () => {
+    const t: SnapTarget = { name: 'edge', point: [mid.bary[0] * 0 + pointOnSurface(m, mid)[0] + 0.25, pointOnSurface(m, mid)[1], 0] };
+    expect(snapPoint(m, mid, [t], 0.25).target).toBe('edge');
+  });
+});
+
+describe('findControlPoint', () => {
+  const m = grid(2, 2);
+  const near = (at: Vec3) => (p: Vec3) => Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]);
+  const seams: Seam[] = [
+    { points: [vertexPoint(m, 0), vertexPoint(m, 4)], closed: false },
+    { points: [vertexPoint(m, 8), vertexPoint(m, 5)], closed: false },
+  ];
+  it('finds the control point under a position, with its seam and index', () => {
+    expect(findControlPoint(m, seams, near([1.05, 1, 0]), 0.2)).toEqual({ seam: 0, index: 1 });
+    expect(findControlPoint(m, seams, near([2, 2, 0.1]), 0.2)).toEqual({ seam: 1, index: 0 });
+    expect(findControlPoint(m, seams, near([2, 1, 0]), 0.2)).toEqual({ seam: 1, index: 1 });
+  });
+  it('returns nothing outside the radius, and nothing when there are no seams', () => {
+    expect(findControlPoint(m, seams, near([0.5, 1.5, 0]), 0.2)).toBeUndefined();
+    expect(findControlPoint(m, [], near([0, 0, 0]), 5)).toBeUndefined();
+  });
+  it('uses whatever distance the caller supplies (the viewer passes screen distance)', () => {
+    expect(findControlPoint(m, seams, (p) => Math.abs(p[1] - 2), 0.1)).toEqual({ seam: 1, index: 0 });
+  });
+  it('picks the nearest when several are in range, and accepts exactly the radius', () => {
+    expect(findControlPoint(m, seams, near([1.4, 1, 0]), 5)).toEqual({ seam: 0, index: 1 });
+    expect(findControlPoint(m, seams, near([0, 0.5, 0]), 0.5)).toEqual({ seam: 0, index: 0 });
+  });
+});
+
+describe('closestBary', () => {
+  const A: Vec3 = [0, 0, 0];
+  const B: Vec3 = [4, 0, 0];
+  const C: Vec3 = [0, 4, 0];
+  it('gives the exact weights in each of the seven regions of a right triangle', () => {
+    const cases: [Vec3, Vec3][] = [
+      [[-1, -1, 0], [1, 0, 0]], // corner A
+      [[6, -1, 0], [0, 1, 0]], // corner B
+      [[-1, 6, 0], [0, 0, 1]], // corner C
+      [[1, -2, 0], [0.75, 0.25, 0]], // edge AB
+      [[-2, 3, 0], [0.25, 0, 0.75]], // edge AC
+      [[5, 2, 0], [0, 0.875, 0.125]], // edge BC
+      [[1, 1, 2], [0.5, 0.25, 0.25]], // inside, above the plane
+      [[1, 1, -3], [0.5, 0.25, 0.25]], // inside, below it
+    ];
+    for (const [p, want] of cases) closestBary(p, A, B, C).forEach((v, i) => expect(v).toBeCloseTo(want[i], 12));
+  });
+  it('is on the boundary exactly where the point projects onto it', () => {
+    expect(closestBary([4, 0, 0], A, B, C)).toEqual([0, 1, 0]); // a corner itself
+    expect(closestBary([0, 0, 0], A, B, C)).toEqual([1, 0, 0]);
+    expect(closestBary([2, 0, 5], A, B, C)).toEqual([0.5, 0.5, 0]); // above the middle of AB
+  });
+  // Oblique triangles, where the dot products of the edges are not zero and a wrong term shows up.
+  const triangles: [Vec3, Vec3, Vec3][] = [
+    [[0, 0, 0], [4, 0, 0], [1, 3, 0]],
+    [[0, 0, 0], [5, 1, 0], [4, 4, 1]],
+    [[1, 2, 3], [4, 1, 0], [2, 6, 1]],
+  ];
+  const at = (t: [Vec3, Vec3, Vec3], w: Vec3): Vec3 => [0, 1, 2].map((k) => w[0] * t[0][k] + w[1] * t[1][k] + w[2] * t[2][k]) as Vec3;
+  const dist = (a: Vec3, b: Vec3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  it('finds the closest point of the triangle (checked against a brute-force search) for points all around it', () => {
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (const t of triangles) {
+      for (let n = 0; n < 60; n++) {
+        const p: Vec3 = [rnd() * 14 - 5, rnd() * 14 - 5, rnd() * 8 - 3];
+        const w = closestBary(p, ...t);
+        expect(w[0] + w[1] + w[2]).toBeCloseTo(1, 12);
+        for (const x of w) expect(x).toBeGreaterThanOrEqual(-1e-12);
+        let best = Infinity;
+        const N = 120;
+        for (let i = 0; i <= N; i++) for (let j = 0; i + j <= N; j++) best = Math.min(best, dist(p, at(t, [1 - (i + j) / N, i / N, j / N])));
+        const got = dist(p, at(t, w));
+        expect(got).toBeLessThanOrEqual(best + 1e-9); // never worse than the grid
+        expect(got).toBeGreaterThan(best - 0.2); // and the grid (spacing ~ 0.05) cannot be far better: it is exact
+      }
+    }
+  });
+});
+
+describe('closestSurfacePoint on several triangles', () => {
+  it('uses the strict nearest (a later triangle at equal distance does not replace the first)', () => {
+    const m: Mesh = { positions: Float64Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1]), triangles: Uint32Array.from([0, 1, 2, 3, 4, 5]) };
+    const c = closestSurfacePoint(m, [0.2, 0.2, 0.5]);
+    expect(c.tri).toBe(0); // 0.5 below, and 0.5 above triangle 1
+    expect(c.distance).toBeCloseTo(0.5, 12);
   });
 });

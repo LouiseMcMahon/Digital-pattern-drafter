@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
 import type { FitTargets } from './core/fit';
 import { FIXTURES } from './core/fixtures';
-import { type Seam, SurfaceGraph, polylineLength, pointOnSurface, raycast, snapToVertex } from './core/seam';
+import { type Seam, type SnapTarget, SurfaceGraph, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
 
@@ -22,8 +22,9 @@ controls.innerHTML = `
   <div style="margin-top:6px">View: <button data-view="front">Front</button> <button data-view="side">Side</button> <button data-view="back">Back</button> <button data-view="three">3/4</button> <button data-view="torso">Torso</button></div>
   <label><input type="checkbox" id="lines"> show where each ring is measured</label>
   <h4>Seams</h4>
-  <label><input type="checkbox" id="draw"> draw seams: click the body to add points (drag to turn the view)</label><br>
+  <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green) and to the ends of other seams.</label><br>
   <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-clear">Clear all</button>
+  <div id="snap" style="margin-top:4px;color:#555;min-height:1.2em"></div>
   <div id="seams" style="margin-top:4px"></div>
   <div id="status">Loading body model…</div>`;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -61,6 +62,8 @@ const lineGroup = new THREE.Group();
 scene.add(lineGroup);
 const seamGroup = new THREE.Group();
 scene.add(seamGroup);
+const landmarkGroup = new THREE.Group(); // snap targets, shown while drawing
+scene.add(landmarkGroup);
 
 const VIEWS: Record<string, [number, number, number, number, number, number]> = {
   // camera x,y,z then target x,y,z
@@ -91,6 +94,8 @@ let shapePositions: Float64Array = new Float64Array(0);
 let graph: SurfaceGraph;
 // The last seam is the one being drawn. Control points are stored on faces, so they follow the body when it is re-fitted.
 let seams: Seam[] = [];
+// Named places the seam points snap to (neck and shoulder points, bust apex, ...), re-found on every body.
+let landmarks: SnapTarget[] = [];
 
 /** Remove an object and free its GPU resources (geometries and materials are not freed by removal). */
 function disposeTree(o: THREE.Object3D) {
@@ -138,9 +143,11 @@ function show(params: BodyParams) {
   scene.add(mesh);
   render();
   // One measurement pass: with the overlay on, the same pass also records what to draw.
-  const info = $<HTMLInputElement>('lines').checked ? measurer.inspect(shape) : undefined;
-  const m = info ? info.values : measurer.measure(shape);
-  drawLines(info);
+  const info = measurer.inspect(shape);
+  const m = info.values;
+  landmarks = info.marks.filter((k) => !k.name.startsWith('crease')).map((k) => ({ name: k.name, point: k.point }));
+  drawLines($<HTMLInputElement>('lines').checked ? info : undefined);
+  drawLandmarks();
   drawSeams();
   render();
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
@@ -174,23 +181,129 @@ function drawSeams() {
 const activeSeam = () => seams[seams.length - 1];
 const redrawSeams = () => { drawSeams(); render(); };
 
-// A click (not a drag, which turns the view) on the body adds a point to the active seam.
+function drawLandmarks() {
+  for (const c of [...landmarkGroup.children]) { landmarkGroup.remove(c); disposeTree(c); }
+  if (!$<HTMLInputElement>('draw').checked) return;
+  for (const l of landmarks) {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0x10a040 }));
+    dot.position.set(...l.point);
+    landmarkGroup.add(dot);
+  }
+}
+$('draw').onchange = () => { drawLandmarks(); render(); };
+
+const ndc = (e: PointerEvent) => {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -(((e.clientY - rect.top) / rect.height) * 2 - 1));
+};
+/** The body point under the pointer, or undefined. */
+function pick(e: PointerEvent) {
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(ndc(e), camera);
+  const hit = raycast(bodyMesh(), [ray.ray.origin.x, ray.ray.origin.y, ray.ray.origin.z], [ray.ray.direction.x, ray.ray.direction.y, ray.ray.direction.z]);
+  return hit && { surface: { tri: hit.tri, bary: hit.bary }, at: pointOnSurface(bodyMesh(), hit), t: hit.t };
+}
+/** How many cm a screen pixel covers at a point on the body (so snapping and grabbing feel the same at any zoom). */
+const pixelCm = (at: [number, number, number]) =>
+  (2 * camera.position.distanceTo(new THREE.Vector3(...at)) * Math.tan((camera.fov * Math.PI) / 360)) / renderer.domElement.clientHeight;
+const SNAP_PIXELS = 10;
+const GRAB_PIXELS = 8;
+const drawing = () => $<HTMLInputElement>('draw').checked && !!body;
+
+/** Snap targets for a new or moved point: the landmarks, and every other seam point (so seams can meet). */
+function targets(skip?: { seam: number; index: number }): SnapTarget[] {
+  const m = bodyMesh();
+  const out = [...landmarks];
+  seams.forEach((seam, si) => seam.points.forEach((p, i) => {
+    if (!(skip && skip.seam === si && skip.index === i)) out.push({ name: `seam ${si + 1} point ${i + 1}`, point: pointOnSurface(m, p) });
+  }));
+  return out;
+}
+/**
+ * Snap by what the user sees: targets within SNAP_PIXELS of the pointer on screen and not hidden behind the body.
+ * (Distance in space is the wrong test: a landmark on a steep part of the body, like the neck point, is a
+ * centimetre or more away in depth from a click a few pixels off it.)
+ */
+function snapAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>, skip?: { seam: number; index: number }) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const visible = targets(skip).filter((t) => {
+    const v = new THREE.Vector3(...t.point).project(camera);
+    const px = rect.left + ((v.x + 1) / 2) * rect.width;
+    const py = rect.top + ((1 - v.y) / 2) * rect.height;
+    const hidden = Math.abs(camera.position.distanceTo(new THREE.Vector3(...t.point)) - hit.t) > 3;
+    return !hidden && Math.hypot(px - e.clientX, py - e.clientY) <= SNAP_PIXELS;
+  });
+  return snapPoint(bodyMesh(), hit.surface, visible, Infinity, SNAP_PIXELS * pixelCm(hit.at));
+}
+/** The control point under the pointer, measured on screen like snapping is. */
+function grabAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return findControlPoint(bodyMesh(), seams, (p) => {
+    const v = new THREE.Vector3(...p).project(camera);
+    const hidden = Math.abs(camera.position.distanceTo(new THREE.Vector3(...p)) - hit.t) > 3;
+    return hidden ? Infinity : Math.hypot(rect.left + ((v.x + 1) / 2) * rect.width - e.clientX, rect.top + ((1 - v.y) / 2) * rect.height - e.clientY);
+  }, GRAB_PIXELS);
+}
+const setSnapNote = (name?: string) => { $('snap').textContent = name ? `Snapped to ${name}` : ''; };
+
+// Gesture: a press on a control point drags it (shift deletes it); a press elsewhere that is released without
+// moving adds a point; anything else is the orbit control turning the view.
 let down: { x: number; y: number } | undefined;
-renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+let dragging: { seam: number; index: number } | undefined;
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  down = { x: e.clientX, y: e.clientY };
+  if (!drawing()) return;
+  const hit = pick(e);
+  const grab = hit && grabAt(e, hit);
+  if (!grab) return;
+  e.stopImmediatePropagation(); // capture phase: the orbit control never sees this press
+  down = undefined;
+  if (e.shiftKey) {
+    seams[grab.seam].points.splice(grab.index, 1);
+    if (seams[grab.seam].points.length < 3) seams[grab.seam].closed = false;
+    if (seams[grab.seam].points.length === 0) seams.splice(grab.seam, 1);
+    redrawSeams();
+    return;
+  }
+  dragging = grab;
+  renderer.domElement.setPointerCapture(e.pointerId);
+}, true);
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drawing()) return;
+  const hit = pick(e);
+  if (dragging) {
+    if (!hit) return;
+    const snapped = snapAt(e, hit, dragging);
+    seams[dragging.seam].points[dragging.index] = snapped.point;
+    setSnapNote(snapped.target);
+    redrawSeams();
+    return;
+  }
+  renderer.domElement.style.cursor = hit && grabAt(e, hit) ? 'grab' : '';
+});
 renderer.domElement.addEventListener('pointerup', (e) => {
+  if (dragging) { dragging = undefined; renderer.domElement.releasePointerCapture(e.pointerId); return; }
   const start = down;
   down = undefined;
-  if (!start || !$<HTMLInputElement>('draw').checked || !body) return;
+  if (!start || !drawing()) return;
   if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  const ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -(((e.clientY - rect.top) / rect.height) * 2 - 1)), camera);
-  const hit = raycast(bodyMesh(), [ray.ray.origin.x, ray.ray.origin.y, ray.ray.origin.z], [ray.ray.direction.x, ray.ray.direction.y, ray.ray.direction.z]);
+  const hit = pick(e);
   if (!hit) return;
   if (!activeSeam() || activeSeam().closed) seams.push({ points: [], closed: false });
-  activeSeam().points.push(snapToVertex(bodyMesh(), { tri: hit.tri, bary: hit.bary }, 1));
+  const snapped = snapAt(e, hit);
+  activeSeam().points.push(snapped.point);
+  setSnapNote(snapped.target);
   redrawSeams();
 });
+// Test hooks (the e2e script drives the real page with them): where a landmark is on screen, and what the seams hold.
+(window as unknown as Record<string, unknown>).screenOf = (name: string) => {
+  const l = landmarks.find((k) => k.name === name);
+  if (!l) return undefined;
+  const v = new THREE.Vector3(...l.point).project(camera);
+  const rect = renderer.domElement.getBoundingClientRect();
+  return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+};
+(window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
 $('seam-undo').onclick = () => {
   if (!activeSeam()) return;
   if (activeSeam().closed) activeSeam().closed = false;
