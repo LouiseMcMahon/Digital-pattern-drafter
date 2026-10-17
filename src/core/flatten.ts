@@ -1,11 +1,9 @@
-import { type Mesh, type Vec3, cross, dot, getVertex, len, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
+import { type Mesh, type Vec3, cross, dot, getVertex, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
 import { lscm } from './lscm';
-import { type EaseField, type Fabric, scalesAt } from './ease';
+import { type EaseField, scalesAt } from './ease';
 
 export interface FlattenOptions {
   ease: EaseField;
-  /** Circumference of the body at height y (cm); needed to turn ease cm into a scale. */
-  circumferenceAt: (y: number) => number;
   up?: Vec3;
   iterations?: number;
 }
@@ -51,7 +49,7 @@ export function flatten(mesh: Mesh, opts: FlattenOptions): FlattenResult {
     const dv = dot(e, v);
     const rest = Math.max(0, dot(e, e) - dh * dh - dv * dv);
     const ymid = (pa[1] + pb[1]) / 2;
-    const s = scalesAt(opts.ease, ymid, opts.circumferenceAt(ymid));
+    const s = scalesAt(opts.ease, ymid);
     ea.push(a);
     eb.push(b);
     target.push(Math.sqrt((s.horizontal * dh) ** 2 + (s.vertical * dv) ** 2 + rest));
@@ -135,49 +133,4 @@ function countFlips(mesh: Mesh, uv: Float64Array): number {
     if (area2 < 0) flipped++;
   }
   return flipped;
-}
-
-export interface StretchReport {
-  /** Worst stretch the fabric must give (fraction), measured pattern -> body. */
-  maxH: number;
-  maxV: number;
-  fabricOk: boolean;
-}
-
-/**
- * How far each triangle of the flat pattern must stretch to reach the body,
- * measured along the weft and warp directions.
- */
-export function stretchDemand(mesh: Mesh, uv: Float64Array, fabric: Fabric, up: Vec3 = [0, 1, 0]): StretchReport {
-  const normals = vertexNormals(mesh);
-  let maxH = -Infinity;
-  let maxV = -Infinity;
-  for (let t = 0; t < triangleCount(mesh); t++) {
-    const idx = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
-    const [pa, pb, pc] = idx.map((i) => getVertex(mesh, i));
-    const e1 = sub(pb, pa);
-    const e2 = sub(pc, pa);
-    const nm = normalize(normals[idx[0]].map((_, k) => normals[idx[0]][k] + normals[idx[1]][k] + normals[idx[2]][k]) as Vec3);
-    const { h, v } = frame(nm, up);
-    const f1: [number, number] = [uv[2 * idx[1]] - uv[2 * idx[0]], uv[2 * idx[1] + 1] - uv[2 * idx[0] + 1]];
-    const f2: [number, number] = [uv[2 * idx[2]] - uv[2 * idx[0]], uv[2 * idx[2] + 1] - uv[2 * idx[0] + 1]];
-    // Express a 3D tangent direction d as a*e1 + b*e2 (least squares), then map to flat as a*f1 + b*f2.
-    const g11 = dot(e1, e1);
-    const g12 = dot(e1, e2);
-    const g22 = dot(e2, e2);
-    const det = g11 * g22 - g12 * g12;
-    if (Math.abs(det) < 1e-12) continue;
-    const stretchAlong = (d: Vec3) => {
-      const r1 = dot(d, e1);
-      const r2 = dot(d, e2);
-      const a = (r1 * g22 - r2 * g12) / det;
-      const b = (r2 * g11 - r1 * g12) / det;
-      const flat = Math.hypot(a * f1[0] + b * f2[0], a * f1[1] + b * f2[1]);
-      const real = len([a * e1[0] + b * e2[0], a * e1[1] + b * e2[1], a * e1[2] + b * e2[2]]);
-      return flat > 1e-9 ? real / flat - 1 : 0;
-    };
-    maxH = Math.max(maxH, stretchAlong(h));
-    maxV = Math.max(maxV, stretchAlong(v));
-  }
-  return { maxH, maxV, fabricOk: maxH <= fabric.maxStretchH + 1e-6 && maxV <= fabric.maxStretchV + 1e-6 };
 }

@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { buildFrontTorso, circumferenceAt, defaultMeasurements, type Measurements } from './core/body';
-import { fabrics, type EaseField } from './core/ease';
-import { flatten, stretchDemand } from './core/flatten';
+import { buildFrontTorso, defaultMeasurements, type Measurements } from './core/body';
+import type { EaseField } from './core/ease';
+import { flatten } from './core/flatten';
 
 const m: Measurements = structuredClone(defaultMeasurements);
-const ease = { chest: 4, waist: 4, hip: 4, vertical: 0, fabric: 0 };
+const ease = { bust: 0, waist: 0, hip: 0, vertical: 0 };
 
 const controls = document.getElementById('controls')!;
 const flatEl = document.getElementById('flat')!;
@@ -27,19 +27,15 @@ h('Body (cm)');
 slider('Bust', 70, 130, 1, () => m.bust, (v) => (m.bust = v));
 slider('Waist', 55, 120, 1, () => m.waist, (v) => (m.waist = v));
 slider('Hip', 75, 140, 1, () => m.hip, (v) => (m.hip = v));
-h('Horizontal ease (cm, total)');
-slider('Bust', -30, 20, 1, () => ease.chest, (v) => (ease.chest = v));
-slider('Waist', -30, 20, 1, () => ease.waist, (v) => (ease.waist = v));
-slider('Hip', -30, 20, 1, () => ease.hip, (v) => (ease.hip = v));
-h('Vertical ease');
-slider('% of length', -20, 20, 1, () => ease.vertical * 100, (v) => (ease.vertical = v / 100));
-h('Fabric');
-const sel = document.createElement('select');
-fabrics.forEach((f, i) => sel.append(new Option(f.name, String(i))));
-sel.onchange = () => { ease.fabric = +sel.value; update(); };
-controls.append(sel);
+h('Horizontal ease (%)');
+slider('Bust', -40, 40, 1, () => ease.bust, (v) => (ease.bust = v));
+slider('Waist', -40, 40, 1, () => ease.waist, (v) => (ease.waist = v));
+slider('Hip', -40, 40, 1, () => ease.hip, (v) => (ease.hip = v));
+h('Vertical ease (%)');
+slider('Whole panel', -40, 40, 1, () => ease.vertical, (v) => (ease.vertical = v));
 const report = document.createElement('div');
 report.id = 'report';
+report.className = 'ok';
 controls.append(report);
 
 // 3D view
@@ -64,12 +60,12 @@ function update() {
   const g = buildFrontTorso(m);
   const field: EaseField = {
     knots: [
-      { y: m.hipHeight, horizontalCm: ease.hip, vertical: ease.vertical },
-      { y: 0, horizontalCm: ease.waist, vertical: ease.vertical },
-      { y: m.bustHeight, horizontalCm: ease.chest, vertical: ease.vertical },
+      { y: m.hipHeight, horizontal: ease.hip, vertical: ease.vertical },
+      { y: 0, horizontal: ease.waist, vertical: ease.vertical },
+      { y: m.bustHeight, horizontal: ease.bust, vertical: ease.vertical },
     ],
   };
-  const r = flatten(g.mesh, { ease: field, circumferenceAt: (y) => circumferenceAt(m, y) });
+  const r = flatten(g.mesh, { ease: field });
 
   if (torso) { scene.remove(torso); torso.geometry.dispose(); }
   const geo = new THREE.BufferGeometry();
@@ -97,12 +93,8 @@ function update() {
   const waistLine = Array.from({ length: cols }, (_, c) => pt(waistRow, c)).join(' ');
   flatEl.innerHTML = `<svg viewBox="${x0} ${y0} ${w} ${hh}"><polygon points="${outline.join(' ')}" fill="#fff6" stroke="#222" stroke-width=".4"/><polyline points="${waistLine}" fill="none" stroke="#c33" stroke-width=".3" stroke-dasharray="1 1"/></svg>`;
 
-  const f = fabrics[ease.fabric];
-  const s = stretchDemand(g.mesh, r.uv, f);
-  report.className = s.fabricOk ? 'ok' : 'bad';
-  report.innerHTML = `Front panel width at hem: ${(Math.max(...xs) - Math.min(...xs)).toFixed(1)} cm<br>
-    Stretch needed: ${(Math.max(0, s.maxH) * 100).toFixed(0)}% across, ${(Math.max(0, s.maxV) * 100).toFixed(0)}% down<br>
-    ${f.name}: ${s.fabricOk ? 'OK' : 'exceeds fabric stretch'}<br>
+  const [pw, ph] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  report.innerHTML = `Front panel: ${pw.toFixed(1)} cm wide, ${ph.toFixed(1)} cm tall<br>
     Layout error ${(r.rmsEdgeError * 100).toFixed(1)}%, flipped triangles: ${r.flippedTriangles}`;
 }
 update();
