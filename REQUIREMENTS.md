@@ -35,3 +35,8 @@ Panels are pulled off the 3D form along seams the user draws. Ease is a plain pe
 ## R4. Publishable
 
 All code and data must be usable if the app is published. No non-commercial or research-only models or assets (SMPL, SMPL-X, STAR, Anny's SMPL-X topology). Keep third-party licence notices in the repo.
+
+## Status
+- R1: met for the fixtures in `src/core/fixtures.ts` (`npm test`), within 0.5 cm and usually < 0.1 cm. Definitions still need calibration against real people (see PLAN.md).
+- R2: tall (188 cm) average/broad/narrow, petite and plus-size fixtures pass. Implausible proportions are flagged as warnings; measurements that cannot be met are listed, not hidden.
+- R4: Anny code is Apache-2.0 and its data CC0; see THIRD_PARTY_NOTICES.md.

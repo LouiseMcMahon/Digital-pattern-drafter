@@ -22,14 +22,19 @@ Ease is a percentage applied to the body's own lengths when flattening, independ
 ## Milestones
 0. [done] Spike: LSCM unwrap + relaxation toward eased targets, demo page.
 1. [done] Body: full torso (front + back) from bust, underbust, waist, hip, chest, neck, shoulder width, bust apex separation/prominence and ring heights. Circumferences are fitted by reading them back off the mesh. Named landmarks (vertex ids). Panels are sub-meshes with boundary loops. Orbit camera in the demo.
-2. Body v2 (in progress, blocked on a base-model decision): arms, neck, legs, hands, feet. The ring-loft torso can't branch. Candidates: bake a compact shape model from Anny (Apache-2.0 code, CC0 MakeHuman data) or MakeHuman targets; then a measurement-driven correction so R1/R2 hold. Includes a full sewing-measurement set, one shared measurement definition for fit + read-back + tests, and extreme-body test fixtures.
-3. Seam drawing: raycast onto the mesh, snap to landmarks, geodesic/slice paths, stored as face + barycentric so they survive body edits; panel detection from closed seam loops; mesh split along seams.
+2. [done, see limitations] Body v2: full body (head, neck, arms, hands, legs, feet) baked from Anny (tools/bake_body, public/body, 5 MB; 40 PCA components reproduce sampled adults to ~0.07 mm mean). 21 sewing measurements with one shared definition (src/core/measure.ts) used for fitting, read-back and tests. Levenberg-Marquardt fit (src/core/fit.ts) in a Web Worker; tests in src/core/fit.test.ts cover the R1/R2 fixtures: 6'2" woman (average/broad/narrow), petite, plus size, sparse input, implausible input. Every fixture matches within 0.5 cm (typically < 0.1 cm).
+3. Seam drawing (next, on the baked body): raycast onto the mesh, snap to landmarks, geodesic/slice paths, stored as face + barycentric so they survive body edits; panel detection from closed seam loops; mesh split along seams.
 4. Flattening for arbitrary panels: per-panel grainline, faster/more exact solver (ARAP / Gauss-Newton), distortion heatmap.
 5. Fit checks and export: paired seam-length comparison, notches, seam allowance, SVG/DXF/tiled PDF at 1:1.
 6. Drape preview (optional): cloth sim of sewn panels on the body.
 7. Scan import: PLY/OBJ, non-rigid registration of the template.
 
 ## Known limitations
-- Body is a ring loft: no arms/armholes, a plain neck stub, and the bust is a Gaussian bump. It is a dress-form stand-in, not an anatomical model. Depth ratios and shoulder shape are guesses to tune against a real form.
-- The flattener is flip-free (moves that would flip a triangle are rejected) but approximate. Panels hem-to-bust fit within ~2% edge error, hem-to-shoulder ~4%; including the neck stub (a saddle) gives ~14% and is not meaningful. Seams (princess seams, neckline, armscye) are the intended way to cut those regions apart.
-- The relaxation is a slow Gauss-Seidel sweep (about a second per panel at 600 iterations); the demo uses 250 and shows a small kink at the top corner of the front panel.
+- Measurement definitions are mine (documented in measure.ts) and have NOT been calibrated against real tape measurements. Real people's numbers (especially shoulder width, underbust, nape-to-waist, front length) may differ systematically from these definitions. Next step: measure a real person and compare.
+- Not yet measurable: back width, chest width, armscye depth, crotch depth/rise (sitting), elbow-to-wrist length, separate left/right limbs (L/R are averaged).
+- The body is in Anny's rest pose (arms slightly out, A-pose-ish). Posing is not implemented (skinning data is already baked).
+- Fixtures are plausible invented measurement sets, not real people. Replace/add real sets as they become available.
+- The fit uses only local controls that change size and proportion (FIT_CONTROL in src/core/fit.ts); posture-like morphs are excluded because they hit numbers by distorting the body.
+- The earlier ring-loft torso (src/core/body.ts and the flatten tests that use it) is superseded by the baked body and will be removed once flattening runs on the new mesh. The demo page no longer shows panels/ease; that returns with seam drawing.
+- Flattening: panels with strong double curvature distort; the flattener is flip-free but approximate.
+- A fit takes a few seconds in a worker; the Jacobian is finite-difference.

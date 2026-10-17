@@ -5,21 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Digital Pattern Drafter</title>
 <style>
-  body { margin: 0; font: 14px system-ui, sans-serif; display: grid; grid-template-columns: 260px 1fr 1fr; height: 100vh; }
+  body { margin: 0; font: 14px system-ui, sans-serif; display: grid; grid-template-columns: 360px 1fr; height: 100vh; }
   aside { padding: 12px; overflow: auto; border-right: 1px solid #ccc; }
-  label { display: block; margin: 8px 0 2px; }
-  input[type=range], select { width: 100%; }
-  #three, #flat { min-width: 0; min-height: 0; }
-  #flat svg { width: 100%; height: 100%; }
-  #report { margin-top: 12px; padding: 8px; border-radius: 6px; }
-  .ok { background: #e3f6e3; } .bad { background: #fbe0e0; }
-  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 40vh 40vh; height: auto; } }
+  h4 { margin: 14px 0 6px; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { padding: 2px 4px; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  input[type=number] { width: 64px; }
+  select, button { margin: 2px 0; }
+  #three { min-width: 0; min-height: 0; }
+  .ok { color: #1a7f1a; } .bad { color: #b00020; font-weight: 600; }
+  #status { margin-top: 8px; padding: 6px; border-radius: 6px; background: #f0f0f0; }
+  .warn { color: #8a5a00; }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 60vh; height: auto; } }
 </style>
 </head>
 <body>
 <aside id="controls"></aside>
 <div id="three"></div>
-<div id="flat"></div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
