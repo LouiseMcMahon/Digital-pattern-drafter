@@ -149,7 +149,7 @@ function show(params: BodyParams) {
   geo.setIndex(new THREE.BufferAttribute(body.faces, 1));
   geo.computeVertexNormals();
   if (mesh) { scene.remove(mesh); disposeTree(mesh); }
-  mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd9a08a, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }));
+  mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x5a5a5e, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }));
   scene.add(mesh);
   render();
   // One measurement pass: with the overlay on, the same pass also records what to draw.
