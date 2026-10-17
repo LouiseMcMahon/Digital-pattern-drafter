@@ -311,3 +311,102 @@ describe('slicePlane on small meshes with known answers', () => {
     expect(l.attr).toBeUndefined();
   });
 });
+
+/** Second round from the mutation report: the survivors that were real gaps (not equivalent mutants). */
+describe('slicePlane: oblique planes, boundaries and short chains', () => {
+  const tube10 = (() => {
+    const rows = 11, cols = 120, R = 10, H = 100;
+    const positions = new Float64Array(rows * cols * 3);
+    for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
+      const t = (2 * Math.PI * j) / cols;
+      positions.set([R * Math.cos(t) + 3, (H * i) / (rows - 1), R * Math.sin(t) - 2], 3 * (i * cols + j)); // off-centre: x+3, z-2
+    }
+    const tris: number[] = [];
+    for (let i = 0; i < rows - 1; i++) for (let j = 0; j < cols; j++) { const a = i * cols + j, b = i * cols + ((j + 1) % cols); tris.push(a, a + cols, b, b, a + cols, b + cols); }
+    return { positions, triangles: Uint32Array.from(tris) };
+  })();
+
+  it('every point of a slice by a generic plane lies on that plane (all three normal components and a non-zero point)', () => {
+    const point: V = [1.5, 47, -3.25];
+    const raw: V = [0.3, 1, -0.45];
+    const n = Math.hypot(...raw);
+    const normal: V = [raw[0] / n, raw[1] / n, raw[2] / n];
+    const loops = slicePlane(tube10.positions, tube10.triangles, { point, normal });
+    expect(loops.length).toBeGreaterThan(0);
+    for (const l of loops) for (let i = 0; i < l.points.length; i += 3) {
+      const d = (l.points[i] - point[0]) * normal[0] + (l.points[i + 1] - point[1]) * normal[1] + (l.points[i + 2] - point[2]) * normal[2];
+      expect(Math.abs(d)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('the perimeter of an oblique slice of a cylinder is the ellipse perimeter (axis, normal and point all off-axis)', () => {
+    // Plane tilted 30 degrees from horizontal through the cylinder: ellipse semi-axes R and R / cos(30).
+    const tilt = Math.PI / 6;
+    const loops = slicePlane(tube10.positions, tube10.triangles, { point: [3, 50, -2], normal: [Math.sin(tilt), Math.cos(tilt), 0] });
+    expect(loops).toHaveLength(1);
+    const [a, b] = [10, 10 / Math.cos(tilt)];
+    const h = ((a - b) / (a + b)) ** 2;
+    expect(loopLength(loops[0])).toBeCloseTo(Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h))), 1);
+  });
+
+  // A square tube of two rings (10 cm square, 10 cm tall), as above, for the touching cases.
+  const ring = (y: number) => [[0, y, 0], [10, y, 0], [10, y, 10], [0, y, 10]];
+  const sq = Float64Array.from([...ring(0), ...ring(10)].flat());
+  const sqTris = (() => { const t: number[] = []; for (let j = 0; j < 4; j++) { const a = j, b = (j + 1) % 4; t.push(a, a + 4, b, b, a + 4, b + 4); } return Uint32Array.from(t); })();
+
+  it('a plane that only touches the mesh along its boundary ring gives no loop', () => {
+    expect(slicePlane(sq, sqTris, { point: [0, 0, 0], normal: [0, 1, 0] })).toEqual([]); // the bottom ring lies in the plane
+  });
+
+  it('a single triangle gives one open chain of two points, never a closed loop', () => {
+    const tri = Float64Array.from([0, 0, 0, 10, 0, 0, 0, 10, 0]);
+    const loops = slicePlane(tri, Uint32Array.from([0, 1, 2]), { point: [0, 5, 0], normal: [0, 1, 0] });
+    expect(loops).toHaveLength(1);
+    expect(loops[0].points.length / 3).toBe(2);
+    expect(loops[0].closed).toBe(false);
+    expect(loopLength(loops[0])).toBeCloseTo(5, 9); // from (0,5,0) to (5,5,0)
+  });
+});
+
+describe('arcPositionOf: the depth (z) terms', () => {
+  // An open path that steps along z, so the projection and the distance both depend on z.
+  const zPath: Loop = { points: [0, 0, 0, 0, 0, 10], closed: false };
+  it.each<[V, number]>([[[0, 0, 4], 4], [[1, 0, 7], 7], [[0, 3, 12], 10], [[2, 2, -3], 0]])('projects %j onto a path along z at %s', (p, expected) => {
+    expect(arcPositionOf(zPath, p)).toBeCloseTo(expected, 9);
+  });
+  it('chooses the segment that is nearer in z, not only in x and y', () => {
+    // A U-shaped path: out along x at z=0, across in z, back along x at z=5.
+    const u: Loop = { points: [0, 0, 0, 10, 0, 0, 10, 0, 5, 0, 0, 5], closed: false };
+    expect(arcPositionOf(u, [4, 0, 4])).toBeCloseTo(10 + 5 + 6, 9); // nearer the z=5 leg (distance 1, not 4)
+    expect(arcPositionOf(u, [4, 0, 1])).toBeCloseTo(4, 9); // nearer the z=0 leg
+  });
+  it('a point equidistant in x and y but off in z is handled in 3D', () => {
+    expect(arcPositionOf({ points: [0, 0, 0, 10, 0, 0], closed: false }, [5, 3, 4])).toBeCloseTo(5, 9);
+  });
+});
+
+describe('arcPoints: choosing the way round', () => {
+  const sqLoop: Loop = { points: [0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0], closed: true };
+  const at = (pts: number[], i: number) => [pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]];
+  const has = (pts: number[], x: number, y: number) => { for (let i = 0; i < pts.length; i += 3) if (Math.abs(pts[i] - x) < 1e-9 && Math.abs(pts[i + 1] - y) < 1e-9) return true; return false; };
+
+  it('exactly half a loop apart: goes the way of increasing arc position (via the right edge), not the other way', () => {
+    const pts = arcPoints(sqLoop, [5, -2, 0], [5, 12, 0]); // arc positions 5 and 25, half of 40
+    expect(has(pts, 10, 0)).toBe(true);
+    expect(has(pts, 10, 10)).toBe(true);
+    expect(has(pts, 0, 0)).toBe(false);
+    expect(at(pts, 0)).toEqual([5, 0, 0]);
+  });
+
+  it('does not wrap when the points are close together far from the start (positions 25 and 35)', () => {
+    const pts = arcPoints(sqLoop, [5, 12, 0], [-2, 5, 0]);
+    expect(at(pts, 0)).toEqual([5, 10, 0]);
+    const last = at(pts, pts.length / 3 - 1);
+    expect(last[0]).toBeCloseTo(0, 9); expect(last[1]).toBeCloseTo(5, 9);
+    let len = 0;
+    for (let i = 3; i < pts.length; i += 3) len += Math.hypot(pts[i] - pts[i - 3], pts[i + 1] - pts[i - 2]);
+    expect(len).toBeCloseTo(10, 6);
+    expect(has(pts, 0, 10)).toBe(true); // passes the corner at (0,10)
+    expect(has(pts, 0, 0)).toBe(false);
+  });
+});

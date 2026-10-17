@@ -60,20 +60,17 @@ export function slicePlane(positions: Float64Array, triangles: Uint32Array, plan
   const loops: Loop[] = [];
   const walk = (start: number): Loop => {
     const order: number[] = [];
-    let prev = -1;
     let cur = start;
-    let closed = false;
     while (true) {
       visited.add(cur);
       order.push(cur);
-      const next = adj.get(cur)!.find((n) => n !== prev && !visited.has(n));
-      if (next === undefined) {
-        closed = adj.get(cur)!.includes(start) && order.length > 2 && prev !== -1;
-        break;
-      }
-      prev = cur;
+      // Everything already walked is visited, so this never steps back onto the point it came from.
+      const next = adj.get(cur)!.find((n) => !visited.has(n));
+      if (next === undefined) break;
       cur = next;
     }
+    // Closed when the walk ended next to where it started (two points that merely touch are a chain, not a loop).
+    const closed = order.length > 2 && adj.get(cur)!.includes(start);
     const points: number[] = [];
     for (const id of order) points.push(pts[3 * id], pts[3 * id + 1], pts[3 * id + 2]);
     return attr ? { points, closed, attr: order.map((id) => ptAttr[id]) } : { points, closed };
