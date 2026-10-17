@@ -24,12 +24,12 @@ export const FIXTURES: Record<string, { label: string; preset: 'female' | 'male'
   tall188Broad: {
     label: "6'2\" woman, broad build",
     preset: 'female',
-    targets: { height: 188, neck: 38, shoulderWidth: 41, bust: 112, underbust: 98, waist: 96, highHip: 108, hip: 120, upperArm: 36, elbow: 25, wrist: 17, thigh: 70, knee: 44, calf: 42, ankle: 25, napeToWaist: 47, frontLength: 50, bustSeparation: 21, armLength: 65, insideLeg: 86, waistHeight: 114, armscyeDepth: 21, highBust: 111, acrossBack: 46, acrossChest: 38, shoulderLength: 13, shoulderToBust: 35.5, bustHeight: 137, waistToHip: 21.5, crotchDepth: 28, crotchLength: 67, upperArmLength: 38, forearmLength: 27, underarmLength: 51.5 },
+    targets: { height: 188, neck: 38, shoulderWidth: 41, bust: 112, underbust: 98, waist: 96, highHip: 108, hip: 120, upperArm: 33, elbow: 28, wrist: 17, thigh: 70, knee: 44, calf: 42, ankle: 25, napeToWaist: 47, frontLength: 50, bustSeparation: 21, armLength: 65, insideLeg: 86, waistHeight: 114, armscyeDepth: 21, highBust: 111, acrossBack: 46, acrossChest: 38, shoulderLength: 13, shoulderToBust: 35.5, bustHeight: 137, waistToHip: 21, crotchDepth: 28, crotchLength: 67, upperArmLength: 38, forearmLength: 27, underarmLength: 51.5 },
   },
   tall188Narrow: {
     label: "6'2\" woman, narrow build",
     preset: 'female',
-    targets: { height: 188, neck: 32, shoulderWidth: 36, bust: 82, underbust: 70, waist: 64, highHip: 83, hip: 91, upperArm: 23, elbow: 22.5, wrist: 14, thigh: 50, knee: 33, calf: 33, ankle: 19, napeToWaist: 46, frontLength: 44, bustSeparation: 17, armLength: 66, insideLeg: 91, waistHeight: 117, armscyeDepth: 20, highBust: 83, acrossBack: 39, acrossChest: 34, shoulderLength: 11, shoulderToBust: 28.5, bustHeight: 141, waistToHip: 20, crotchDepth: 26, crotchLength: 58.5, upperArmLength: 38, forearmLength: 28, underarmLength: 54 },
+    targets: { height: 188, neck: 32, shoulderWidth: 36, bust: 84, underbust: 70, waist: 64, highHip: 83, hip: 91, upperArm: 23, elbow: 23, wrist: 14, thigh: 50, knee: 33, calf: 33, ankle: 19, napeToWaist: 46, frontLength: 44, bustSeparation: 17, armLength: 66, insideLeg: 91, waistHeight: 117, armscyeDepth: 20.5, highBust: 82.5, acrossBack: 37.5, acrossChest: 33, shoulderLength: 11.5, shoulderToBust: 29, bustHeight: 140, waistToHip: 19.5, crotchDepth: 26, crotchLength: 58.5, upperArmLength: 38, forearmLength: 28, underarmLength: 54 },
   },
   petite155: {
     label: "5'1\" woman, petite",
@@ -39,6 +39,6 @@ export const FIXTURES: Record<string, { label: string; preset: 'female' | 'male'
   plus170: {
     label: "5'7\" woman, plus size",
     preset: 'female',
-    targets: { height: 170, neck: 40, shoulderWidth: 41, bust: 125, underbust: 110, waist: 115, highHip: 122, hip: 135, upperArm: 38, elbow: 25, wrist: 18, thigh: 78, knee: 46, calf: 44, ankle: 25, napeToWaist: 42, frontLength: 48, bustSeparation: 22, armLength: 59, insideLeg: 77, waistHeight: 105, armscyeDepth: 21, highBust: 122, acrossBack: 46, acrossChest: 37.5, shoulderLength: 13, shoulderToBust: 37.5, bustHeight: 123, waistToHip: 21, crotchDepth: 28, crotchLength: 70.5, upperArmLength: 35, forearmLength: 24, underarmLength: 45.5 },
+    targets: { height: 170, neck: 40, shoulderWidth: 41, bust: 125, underbust: 110, waist: 115, highHip: 122, hip: 135, upperArm: 34, elbow: 29, wrist: 18, thigh: 78, knee: 46, calf: 44, ankle: 25, napeToWaist: 42, frontLength: 48, bustSeparation: 22, armLength: 59, insideLeg: 77, waistHeight: 105, armscyeDepth: 21, highBust: 123.5, acrossBack: 46, acrossChest: 37.5, shoulderLength: 13, shoulderToBust: 37.5, bustHeight: 123, waistToHip: 21, crotchDepth: 28, crotchLength: 70.5, upperArmLength: 35, forearmLength: 24, underarmLength: 45.5 },
   },
 };

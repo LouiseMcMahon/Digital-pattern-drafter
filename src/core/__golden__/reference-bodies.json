@@ -2707,22 +2707,22 @@
   "tall188Broad": {
    "params": {
     "z": [
-     -0.153077405,
-     -0.534024327,
-     0.5565849,
-     0.895814714,
-     0.513783102,
-     -1.995605786,
-     0.160062119,
-     1.218941211,
-     1.065208213,
-     -0.275903454,
-     1.961215473,
-     -0.209851578,
-     2.198244794,
-     0.633174416,
-     -1.549008539,
-     0.784061553,
+     -0.155405224,
+     -0.494796952,
+     0.477763182,
+     0.876580203,
+     0.546007556,
+     -2.392414431,
+     0.371707598,
+     1.301883643,
+     1.266689819,
+     -0.110137857,
+     2.371823913,
+     0.212704236,
+     1.600357994,
+     0.405785542,
+     -1.669698107,
+     0.251654206,
      -0.533312857,
      2.391851187,
      -0.266497731,
@@ -2749,691 +2749,691 @@
      -1.587577939
     ],
     "local": {
-     "l-lowerarm-scale-depth-incr": -0.027016417,
-     "r-lowerarm-scale-depth-incr": -0.027016417,
-     "l-upperarm-scale-horiz-incr": 0.203561928,
-     "r-upperarm-scale-horiz-incr": 0.203561928,
-     "l-upperarm-fat-incr": 0.400009616,
-     "r-upperarm-fat-incr": 0.400009616,
-     "measure-upperarm-length-incr": 0.271263566,
-     "l-lowerarm-fat-incr": 0.033412807,
-     "r-lowerarm-fat-incr": 0.033412807,
-     "l-lowerarm-scale-horiz-incr": 0.256557379,
-     "r-lowerarm-scale-horiz-incr": 0.256557379,
-     "l-lowerarm-muscle-incr": -0.08583549,
-     "r-lowerarm-muscle-incr": -0.08583549,
-     "l-upperarm-shoulder-muscle-incr": 0.133180028,
-     "r-upperarm-shoulder-muscle-incr": 0.133180028,
-     "measure-upperarm-circ-incr": 0.127159285,
-     "l-upperarm-scale-depth-incr": 0.128165189,
-     "r-upperarm-scale-depth-incr": 0.128165189,
-     "l-lowerarm-scale-vert-incr": -0.030238321,
-     "r-lowerarm-scale-vert-incr": -0.030238321,
-     "measure-lowerarm-length-incr": 0.271555284,
-     "l-upperarm-muscle-incr": 0.1528866,
-     "r-upperarm-muscle-incr": 0.1528866,
-     "l-upperarm-scale-vert-incr": 0.12689986,
-     "r-upperarm-scale-vert-incr": 0.12689986,
-     "breast-dist-incr": 0.445004907,
-     "buttocks-volume-incr": 0.149865761,
-     "measure-ankle-circ-incr": 0.116893208,
-     "measure-wrist-circ-incr": 0.133357607,
-     "hip-scale-horiz-incr": 0.173946121,
-     "hip-scale-depth-incr": 0.143332291,
-     "hip-scale-vert-incr": 0.126663966,
-     "measure-calf-circ-incr": 0.01797804,
-     "measure-lowerleg-height-incr": 0.03151046,
-     "l-upperleg-fat-incr": 0.264438146,
-     "r-upperleg-fat-incr": 0.264438146,
-     "l-lowerleg-muscle-incr": 0.017864854,
-     "r-lowerleg-muscle-incr": 0.017864854,
-     "l-lowerleg-scale-depth-incr": 0.13502522,
-     "r-lowerleg-scale-depth-incr": 0.13502522,
-     "l-lowerleg-scale-vert-incr": 0.028717592,
-     "r-lowerleg-scale-vert-incr": 0.028717592,
-     "l-upperleg-scale-depth-incr": 0.770587324,
-     "r-upperleg-scale-depth-incr": 0.770587324,
-     "l-upperleg-scale-horiz-incr": 0.084918681,
-     "r-upperleg-scale-horiz-incr": 0.084918681,
-     "upperlegs-height-incr": 0.036184561,
-     "l-lowerleg-fat-incr": 0.027784767,
-     "r-lowerleg-fat-incr": 0.027784767,
-     "l-lowerleg-scale-horiz-incr": 0.044578241,
-     "r-lowerleg-scale-horiz-incr": 0.044578241,
-     "lowerlegs-height-incr": 0.0307888,
-     "measure-upperleg-height-incr": 0.036659231,
-     "l-upperleg-muscle-incr": 0.493030017,
-     "r-upperleg-muscle-incr": 0.493030017,
-     "measure-knee-circ-incr": 0.280816565,
-     "measure-thigh-circ-incr": 0.449164222,
-     "l-upperleg-scale-vert-incr": 0.140331923,
-     "r-upperleg-scale-vert-incr": 0.140331923,
-     "measure-neck-circ-incr": -0.328328848,
-     "measure-neck-height-incr": 0.242587722,
-     "neck-scale-depth-incr": -0.067938354,
-     "neck-back-scale-depth-incr": 0.005073724,
-     "neck-scale-horiz-incr": -0.105542347,
-     "neck-scale-vert-incr": 0.19412264,
-     "torso-muscle-pectoral-incr": 0.702416613,
-     "measure-underbust-circ-incr": 0.234427331,
-     "torso-scale-horiz-incr": 0.243729951,
-     "torso-scale-depth-incr": 0.309399313,
-     "measure-napetowaist-dist-incr": 0.260326885,
-     "measure-waisttohip-dist-incr": 0.068606603,
-     "measure-shoulder-dist-incr": 0.374253073,
-     "measure-hips-circ-incr": 0.01498621,
-     "torso-vshape-incr": 0.267206493,
-     "torso-muscle-dorsi-incr": 0.224962022,
-     "measure-waist-circ-incr": 0.507661409,
-     "measure-frontchest-dist-incr": -0.096762246,
-     "torso-scale-vert-incr": 0.250743504,
-     "measure-bust-circ-incr": 0.075751241
+     "l-lowerarm-scale-depth-incr": 0.291942728,
+     "r-lowerarm-scale-depth-incr": 0.291942728,
+     "l-upperarm-scale-horiz-incr": 0.215278436,
+     "r-upperarm-scale-horiz-incr": 0.215278436,
+     "l-upperarm-fat-incr": 0.359856224,
+     "r-upperarm-fat-incr": 0.359856224,
+     "measure-upperarm-length-incr": 0.272338308,
+     "l-lowerarm-fat-incr": 0.32943412,
+     "r-lowerarm-fat-incr": 0.32943412,
+     "l-lowerarm-scale-horiz-incr": 0.267992999,
+     "r-lowerarm-scale-horiz-incr": 0.267992999,
+     "l-lowerarm-muscle-incr": 0.814907369,
+     "r-lowerarm-muscle-incr": 0.814907369,
+     "l-upperarm-shoulder-muscle-incr": 0.231748707,
+     "r-upperarm-shoulder-muscle-incr": 0.231748707,
+     "measure-upperarm-circ-incr": 0.01419517,
+     "l-upperarm-scale-depth-incr": 0.011881212,
+     "r-upperarm-scale-depth-incr": 0.011881212,
+     "l-lowerarm-scale-vert-incr": 0.234194568,
+     "r-lowerarm-scale-vert-incr": 0.234194568,
+     "measure-lowerarm-length-incr": 0.283826414,
+     "l-upperarm-muscle-incr": 0.026859841,
+     "r-upperarm-muscle-incr": 0.026859841,
+     "l-upperarm-scale-vert-incr": -0.056634466,
+     "r-upperarm-scale-vert-incr": -0.056634466,
+     "breast-dist-incr": 0.461937656,
+     "buttocks-volume-incr": 0.042156963,
+     "measure-ankle-circ-incr": 0.091466723,
+     "measure-wrist-circ-incr": -0.152568396,
+     "hip-scale-horiz-incr": 0.166858313,
+     "hip-scale-depth-incr": 0.163569013,
+     "hip-scale-vert-incr": 0.151762136,
+     "measure-calf-circ-incr": 0.021310023,
+     "measure-lowerleg-height-incr": 0.041646827,
+     "l-upperleg-fat-incr": 0.276970371,
+     "r-upperleg-fat-incr": 0.276970371,
+     "l-lowerleg-muscle-incr": 0.018685985,
+     "r-lowerleg-muscle-incr": 0.018685985,
+     "l-lowerleg-scale-depth-incr": 0.120208015,
+     "r-lowerleg-scale-depth-incr": 0.120208015,
+     "l-lowerleg-scale-vert-incr": 0.038124848,
+     "r-lowerleg-scale-vert-incr": 0.038124848,
+     "l-upperleg-scale-depth-incr": 0.57433443,
+     "r-upperleg-scale-depth-incr": 0.57433443,
+     "l-upperleg-scale-horiz-incr": 0.279291525,
+     "r-upperleg-scale-horiz-incr": 0.279291525,
+     "upperlegs-height-incr": 0.03320621,
+     "l-lowerleg-fat-incr": 0.028828777,
+     "r-lowerleg-fat-incr": 0.028828777,
+     "l-lowerleg-scale-horiz-incr": 0.041275848,
+     "r-lowerleg-scale-horiz-incr": 0.041275848,
+     "lowerlegs-height-incr": 0.040719635,
+     "measure-upperleg-height-incr": 0.03365068,
+     "l-upperleg-muscle-incr": 0.482880179,
+     "r-upperleg-muscle-incr": 0.482880179,
+     "measure-knee-circ-incr": 0.244984951,
+     "measure-thigh-circ-incr": 0.431241889,
+     "l-upperleg-scale-vert-incr": -0.079020289,
+     "r-upperleg-scale-vert-incr": -0.079020289,
+     "measure-neck-circ-incr": -0.27197191,
+     "measure-neck-height-incr": 0.264319698,
+     "neck-scale-depth-incr": -0.178103543,
+     "neck-back-scale-depth-incr": 0.035764263,
+     "neck-scale-horiz-incr": -0.168825371,
+     "neck-scale-vert-incr": 0.189905306,
+     "torso-muscle-pectoral-incr": 0.726056494,
+     "measure-underbust-circ-incr": 0.225933726,
+     "torso-scale-horiz-incr": 0.204499744,
+     "torso-scale-depth-incr": 0.280492339,
+     "measure-napetowaist-dist-incr": 0.299065582,
+     "measure-waisttohip-dist-incr": 0.014986071,
+     "measure-shoulder-dist-incr": 0.399904461,
+     "measure-hips-circ-incr": 0.023931127,
+     "torso-vshape-incr": 0.217629282,
+     "torso-muscle-dorsi-incr": 0.218007146,
+     "measure-waist-circ-incr": 0.546859904,
+     "measure-frontchest-dist-incr": -0.155149189,
+     "torso-scale-vert-incr": 0.250360514,
+     "measure-bust-circ-incr": 0.06937499
     }
    },
    "measurements": {
-    "height": 187.9983,
-    "neck": 38.0276,
-    "shoulderWidth": 40.9981,
-    "bust": 111.9992,
-    "underbust": 98.004,
-    "waist": 96.0349,
-    "highHip": 107.9832,
-    "hip": 120.0033,
-    "upperArm": 36.0025,
-    "elbow": 24.9971,
-    "wrist": 17.0005,
-    "thigh": 69.9999,
-    "knee": 43.9984,
-    "calf": 42.0132,
-    "ankle": 25.0174,
-    "napeToWaist": 47.0053,
-    "frontLength": 49.9677,
-    "bustSeparation": 20.9987,
-    "armLength": 64.9944,
-    "insideLeg": 85.9955,
-    "waistHeight": 114.0049,
-    "armscyeDepth": 21.0054,
-    "highBust": 110.9987,
-    "acrossBack": 46.0038,
-    "acrossChest": 37.9965,
-    "shoulderLength": 13.0112,
-    "shoulderToBust": 35.4681,
-    "bustHeight": 136.9914,
-    "waistToHip": 21.4915,
-    "crotchDepth": 28.0094,
-    "crotchLength": 67.0058,
-    "upperArmLength": 37.9971,
-    "forearmLength": 26.9973,
-    "underarmLength": 51.5109
+    "height": 187.9986,
+    "neck": 37.9708,
+    "shoulderWidth": 40.9988,
+    "bust": 112.0178,
+    "underbust": 97.9801,
+    "waist": 95.9835,
+    "highHip": 107.9825,
+    "hip": 119.997,
+    "upperArm": 33.0033,
+    "elbow": 28.0199,
+    "wrist": 17.0144,
+    "thigh": 69.9727,
+    "knee": 44.0055,
+    "calf": 42.0012,
+    "ankle": 24.9666,
+    "napeToWaist": 46.9992,
+    "frontLength": 49.9823,
+    "bustSeparation": 20.9989,
+    "armLength": 64.9822,
+    "insideLeg": 86.0053,
+    "waistHeight": 113.9965,
+    "armscyeDepth": 21.0239,
+    "highBust": 111.0391,
+    "acrossBack": 45.9953,
+    "acrossChest": 37.9667,
+    "shoulderLength": 13.0037,
+    "shoulderToBust": 35.4846,
+    "bustHeight": 136.9982,
+    "waistToHip": 21.0065,
+    "crotchDepth": 27.9911,
+    "crotchLength": 66.9928,
+    "upperArmLength": 37.991,
+    "forearmLength": 26.9912,
+    "underarmLength": 51.5294
    },
    "geometry": {
     "boundsMin": [
-     -32.1586,
+     -31.9803,
      0,
-     -11.691
+     -11.7164
     ],
     "boundsMax": [
-     32.1593,
-     187.9983,
-     22.2639
+     31.9815,
+     187.9986,
+     22.2789
     ],
     "centroid": [
      0.0001,
-     106.9087,
-     8.069
+     106.9711,
+     8.1075
     ],
     "samples": [
      [
-      -3.4663,
-      176.9009,
-      14.9852
+      -3.4648,
+      176.933,
+      14.9451
      ],
      [
-      -4.5439,
-      175.586,
-      14.1094
+      -4.533,
+      175.6099,
+      14.0955
      ],
      [
-      -0.8561,
-      172.4654,
-      17.1751
+      -0.8593,
+      172.4863,
+      17.0853
      ],
      [
-      -1.9841,
-      170.1348,
-      15.8692
+      -1.981,
+      170.1819,
+      15.8281
      ],
      [
-      -0.6704,
-      170.3008,
-      15.5044
+      -0.6697,
+      170.3365,
+      15.4581
      ],
      [
       -1.0338,
-      173.0819,
-      6.8662
+      173.1063,
+      6.843
      ],
      [
-      -7.2757,
-      162.2928,
-      2.5661
+      -7.1559,
+      162.3265,
+      2.7217
      ],
      [
-      -5.4667,
-      179.3369,
-      -1.4045
+      -5.4745,
+      179.3126,
+      -1.38
      ],
      [
-      -2.7396,
-      176.1507,
-      14.436
+      -2.7368,
+      176.1808,
+      14.3883
      ],
      [
-      -2.9085,
-      178.1691,
-      13.2448
+      -2.9045,
+      178.1967,
+      13.1914
      ],
      [
-      -15.1548,
-      150.3518,
-      12.3851
+      -15.0523,
+      150.4114,
+      12.5324
      ],
      [
-      -3.8569,
-      150.6232,
-      14.4417
+      -3.8464,
+      150.7634,
+      14.4484
      ],
      [
-      -23.73,
-      144.0221,
-      -2.9489
+      -23.4815,
+      143.8416,
+      -2.7284
      ],
      [
-      -11.6438,
-      137.9723,
-      19.7172
+      -11.6135,
+      138.0089,
+      20.0198
      ],
      [
-      -29.3157,
-      76.7031,
-      8.0587
+      -29.1964,
+      76.6965,
+      8.1163
      ],
      [
-      -28.7846,
-      75.6552,
-      8.0401
+      -28.6666,
+      75.6518,
+      8.0976
      ],
      [
-      -30.1028,
-      76.7852,
-      3.8318
+      -29.9899,
+      76.7734,
+      3.902
      ],
      [
-      -30.0432,
-      76.9898,
-      1.3008
+      -29.9345,
+      76.9749,
+      1.3776
      ],
      [
-      -30.2208,
-      82.6856,
-      0.5297
+      -30.1187,
+      82.6475,
+      0.6049
      ],
      [
-      -29.0031,
-      81.6602,
-      -0.3938
+      -28.8922,
+      81.6298,
+      -0.3143
      ],
      [
-      -26.4599,
-      84.5136,
-      9.6014
+      -26.3508,
+      84.4826,
+      9.6299
      ],
      [
-      -30.9516,
-      80.7918,
-      0.9802
+      -30.8487,
+      80.7668,
+      1.0488
      ],
      [
-      -29.5879,
-      82.7269,
-      1.0139
+      -29.4781,
+      82.6898,
+      1.0742
      ],
      [
-      -28.715,
-      84.5852,
-      4.9809
+      -28.591,
+      84.5516,
+      5.0332
      ],
      [
-      -31.3513,
-      81.48,
-      3.8152
+      -31.241,
+      81.4533,
+      3.8805
      ],
      [
-      -27.3267,
-      113.4565,
-      -0.7419
+      -27.321,
+      113.8758,
+      -2.2423
      ],
      [
-      -31.7247,
-      84.3019,
-      2.3503
+      -31.6284,
+      84.2671,
+      2.4226
      ],
      [
-      -3.6193,
-      169.5805,
-      12.0285
+      -3.6248,
+      169.6076,
+      11.9896
      ],
      [
-      -19.0393,
-      129.1516,
-      -1.4299
+      -19.3131,
+      129.1337,
+      -1.221
      ],
      [
-      -13.4126,
-      128.5278,
-      -3.1837
+      -13.2503,
+      128.7537,
+      -3.1871
      ],
      [
-      -11.0042,
-      115.9554,
-      15.0587
+      -10.9629,
+      115.8711,
+      15.2374
      ],
      [
-      -5.7241,
-      84.4907,
-      -5.3663
+      -5.8586,
+      84.5655,
+      -5.3109
      ],
      [
-      -15.9946,
-      109.9906,
-      -2.836
+      -15.8546,
+      110.3333,
+      -2.8966
      ],
      [
-      -7.1043,
-      63.4423,
-      12.6945
+      -6.7678,
+      64.4468,
+      12.3196
      ],
      [
-      -6.5049,
-      45.8116,
-      2.3688
+      -6.2835,
+      47.1083,
+      2.4101
      ],
      [
-      -16.0603,
-      19.4871,
-      1.979
+      -15.8691,
+      19.7196,
+      2.1094
      ],
      [
-      -9.398,
-      2.1086,
-      21.7574
+      -9.1742,
+      2.128,
+      21.7744
      ],
      [
-      -4.9282,
-      176.02,
-      13.7886
+      -4.9163,
+      176.0423,
+      13.7707
      ],
      [
-      -2.0919,
-      166.1824,
-      14.2333
+      -2.071,
+      166.2371,
+      14.1887
      ],
      [
-      -1.1757,
-      169.8777,
-      15.635
+      -1.1753,
+      169.9092,
+      15.601
      ],
      [
-      -8.4071,
-      174.0573,
-      4.6091
+      -8.3909,
+      174.0715,
+      4.6268
      ],
      [
-      -7.2678,
-      174.8194,
-      5.2603
+      -7.2546,
+      174.8321,
+      5.2816
      ],
      [
-      -7.0568,
-      173.3005,
-      4.8508
+      -7.0422,
+      173.3134,
+      4.8784
      ],
      [
-      -12.1431,
-      0.9328,
-      19.8208
+      -11.9338,
+      0.9302,
+      19.8564
      ],
      [
-      -13.8465,
-      1.7852,
-      18.8586
+      -13.635,
+      1.7902,
+      18.8956
      ],
      [
-      -8.4654,
-      3.9125,
-      16.0516
+      -8.2662,
+      3.8659,
+      16.1223
      ],
      [
-      -13.9048,
-      1.8645,
-      -3.0474
+      -13.7087,
+      1.899,
+      -2.9043
      ],
      [
-      -9.6726,
-      0.3373,
-      -0.3187
+      -9.4619,
+      0.3462,
+      -0.1638
      ],
      [
-      -15.6975,
-      1.7702,
-      17.3465
+      -15.4766,
+      1.7816,
+      17.3554
      ],
      [
-      -14.0068,
-      0.3104,
-      14.5538
+      -13.8036,
+      0.3386,
+      14.6529
      ],
      [
-      4.5887,
-      176.9667,
-      14.3807
+      4.5751,
+      177.0042,
+      14.3558
      ],
      [
-      2.5824,
-      179.5895,
-      15.7591
+      2.577,
+      179.6113,
+      15.7015
      ],
      [
-      2.8511,
-      169.3071,
-      14.9978
+      2.8422,
+      169.3474,
+      14.9776
      ],
      [
-      1.0077,
-      169.9148,
-      15.7037
+      1.0053,
+      169.9463,
+      15.6691
      ],
      [
-      0.7116,
-      167.394,
-      5.8114
+      0.7106,
+      167.4264,
+      5.8048
      ],
      [
-      5.662,
-      162.5673,
-      -0.1135
+      5.652,
+      162.6387,
+      0.0502
      ],
      [
-      2.7235,
-      165.6612,
-      10.8216
+      2.6981,
+      165.723,
+      10.7057
      ],
      [
-      3.4689,
-      177.8148,
-      14.1575
+      3.4617,
+      177.8501,
+      14.0983
      ],
      [
-      4.4919,
-      176.6797,
-      12.4915
+      4.4857,
+      176.7094,
+      12.4435
      ],
      [
-      17.3286,
-      143.1194,
-      7.1503
+      17.2508,
+      143.0692,
+      7.247
      ],
      [
-      23.502,
-      155.5603,
-      2.8548
+      23.5506,
+      155.4641,
+      2.9621
      ],
      [
-      24.385,
-      137.7044,
-      -2.6968
+      23.9145,
+      137.5053,
+      -2.2505
      ],
      [
-      16.3259,
-      137.6792,
-      14.5438
+      16.1605,
+      137.6876,
+      14.765
      ],
      [
-      30.4444,
-      79.3761,
-      7.2289
+      30.3294,
+      79.3551,
+      7.2832
      ],
      [
-      31.2894,
-      80.9833,
-      4.3968
+      31.1825,
+      80.9536,
+      4.4628
      ],
      [
-      29.0859,
-      74.0757,
-      3.9011
+      28.9732,
+      74.0689,
+      3.9683
      ],
      [
-      28.9563,
-      78.0368,
-      0.9945
+      28.8486,
+      78.0148,
+      1.0686
      ],
      [
-      30.1449,
-      82.4722,
-      0.4283
+      30.0424,
+      82.4307,
+      0.5015
      ],
      [
-      25.0633,
-      83.1319,
-      11.7136
+      24.952,
+      83.103,
+      11.7458
      ],
      [
-      29.739,
-      78.1298,
-      7.2918
+      29.6227,
+      78.1173,
+      7.3494
      ],
      [
-      28.1473,
-      76.3401,
-      8.9444
+      28.0305,
+      76.3312,
+      8.9934
      ],
      [
-      28.8324,
-      80.6223,
-      -1.6492
+      28.7296,
+      80.5938,
+      -1.5762
      ],
      [
-      31.9227,
-      89.7401,
-      5.0468
+      31.7371,
+      89.6839,
+      5.1056
      ],
      [
-      22.3759,
-      120.5058,
-      5.9611
+      21.8508,
+      120.3334,
+      6.2697
      ],
      [
-      26.5657,
-      98.7494,
-      5.1407
+      26.1563,
+      98.6089,
+      5.339
      ],
      [
-      28.0143,
-      88.7162,
-      9.3648
+      27.9093,
+      88.6671,
+      9.3987
      ],
      [
-      6.6665,
-      149.9614,
-      -8.2247
+      6.5371,
+      150.1026,
+      -7.9361
      ],
      [
-      27.5102,
-      92.9278,
-      1.9885
+      27.4075,
+      92.8595,
+      2.0026
      ],
      [
-      11.0588,
-      115.9617,
-      -4.7032
+      10.839,
+      116.0617,
+      -4.8578
      ],
      [
-      4.8695,
-      97.175,
-      -11.554
+      5.0971,
+      97.7508,
+      -11.63
      ],
      [
-      6.5765,
-      106.4898,
-      17.087
+      6.6121,
+      106.7247,
+      17.2053
      ],
      [
-      15.5422,
-      67.8177,
-      -6.4691
+      15.9368,
+      68.4863,
+      -6.0731
      ],
      [
-      17.8709,
-      49.7313,
-      3.2096
+      17.6082,
+      51.1251,
+      3.4343
      ],
      [
-      12.917,
-      24.2517,
-      4.9682
+      12.8255,
+      24.511,
+      5.1258
      ],
      [
-      7.2356,
-      1.5574,
-      18.7537
+      7.0353,
+      1.5674,
+      18.7831
      ],
      [
-      3.1941,
-      174.2476,
-      14.7225
+      3.1981,
+      174.2715,
+      14.6956
      ],
      [
-      6.6594,
-      173.705,
-      10.4773
+      6.6674,
+      173.7305,
+      10.4669
      ],
      [
-      1.116,
-      170.8261,
-      15.3617
+      1.1189,
+      170.8585,
+      15.3141
      ],
      [
-      8.3407,
-      175.3208,
-      4.652
+      8.3233,
+      175.3331,
+      4.6692
      ],
      [
-      7.0803,
-      173.8692,
-      5.2754
+      7.0673,
+      173.8814,
+      5.2976
      ],
      [
-      7.2811,
-      176.8675,
-      7.2453
+      7.2731,
+      176.8785,
+      7.266
      ],
      [
-      12.672,
-      1.638,
-      21.1822
+      12.4612,
+      1.6319,
+      21.198
      ],
      [
-      15.1379,
-      0.5767,
-      18.2138
+      14.9333,
+      0.5862,
+      18.2615
      ],
      [
-      8.6881,
-      2.3187,
-      20.4482
+      8.4768,
+      2.3177,
+      20.4783
      ],
      [
-      12.8038,
-      0.9377,
-      -3.4709
+      12.6162,
+      0.9591,
+      -3.3393
      ],
      [
-      13.2438,
-      0.4268,
-      3.8519
+      13.0342,
+      0.4218,
+      3.9742
      ],
      [
-      16.2417,
-      1.3673,
-      17.9099
+      16.0144,
+      1.3789,
+      17.9079
      ],
      [
-      9.8869,
-      0.1929,
-      15.4035
+      9.7013,
+      0.2168,
+      15.4987
      ],
      [
-      -1.4198,
-      169.4375,
-      13.7971
+      -1.4202,
+      169.4756,
+      13.7585
      ],
      [
-      0.5308,
-      170.7934,
-      9.6948
+      0.5313,
+      170.8409,
+      9.669
      ],
      [
-      -2.9745,
-      176.3003,
-      14.8504
+      -2.9682,
+      176.3311,
+      14.8046
      ]
     ],
     "joints": {
      "root": [
       0,
-      98.8946,
-      1.9883
+      99.1955,
+      2.0905
      ],
      "upperarm01.L": [
-      19.7541,
-      150.749,
-      3.1732
+      19.6819,
+      150.7522,
+      3.2251
      ],
      "lowerarm01.L": [
-      25.1655,
-      120.0594,
-      3.1732
+      25.1054,
+      119.9943,
+      3.2251
      ],
      "wrist.L": [
-      29.8538,
-      93.4707,
-      3.1732
+      29.7929,
+      93.4101,
+      3.2251
      ],
      "upperleg01.L": [
-      11.5009,
-      97.3419,
-      1.2265
+      11.2951,
+      97.6465,
+      1.3603
      ],
      "lowerleg01.L": [
-      11.5009,
-      52.5435,
-      1.2265
+      11.2951,
+      53.7673,
+      1.3603
      ],
      "foot.L": [
-      11.5009,
-      8.2225,
-      1.2265
+      11.2951,
+      8.2374,
+      1.3603
      ],
      "neck01": [
       0,
-      160.3714,
-      1.7152
+      160.2905,
+      1.6888
      ],
      "head": [
       0,
-      172.463,
-      5.161
+      172.4775,
+      5.1576
      ]
     }
    }
@@ -3441,22 +3441,22 @@
   "tall188Narrow": {
    "params": {
     "z": [
-     -0.211245314,
-     -0.692578959,
-     -0.479929501,
-     2.021749215,
-     -0.255754043,
-     -0.992163671,
-     -0.639420772,
-     1.402215238,
-     1.423666231,
-     1.610240744,
-     -0.497108733,
-     -0.575432129,
-     1.123348462,
-     -1.155869504,
-     -1.142323886,
-     -0.113899497,
+     -0.239353834,
+     -1.343610164,
+     -0.758137285,
+     1.763546639,
+     -0.322130508,
+     -1.891621595,
+     -0.464146256,
+     1.203758473,
+     1.610761184,
+     1.641535156,
+     -0.788590597,
+     -0.225400835,
+     1.309172301,
+     -0.604210557,
+     -1.487045601,
+     -0.412750404,
      -0.533312857,
      2.391851187,
      -0.266497731,
@@ -3483,691 +3483,691 @@
      -1.587577939
     ],
     "local": {
-     "l-lowerarm-scale-depth-incr": -0.022989306,
-     "r-lowerarm-scale-depth-incr": -0.022989306,
-     "l-upperarm-scale-horiz-incr": 0.262372087,
-     "r-upperarm-scale-horiz-incr": 0.262372087,
-     "l-upperarm-fat-incr": -0.216347644,
-     "r-upperarm-fat-incr": -0.216347644,
-     "measure-upperarm-length-incr": 0.35704237,
-     "l-lowerarm-fat-incr": -0.103992817,
-     "r-lowerarm-fat-incr": -0.103992817,
-     "l-lowerarm-scale-horiz-incr": 0.28967879,
-     "r-lowerarm-scale-horiz-incr": 0.28967879,
-     "l-lowerarm-muscle-incr": -0.064435277,
-     "r-lowerarm-muscle-incr": -0.064435277,
-     "l-upperarm-shoulder-muscle-incr": 0.135741931,
-     "r-upperarm-shoulder-muscle-incr": 0.135741931,
-     "measure-upperarm-circ-incr": -0.049024184,
-     "l-upperarm-scale-depth-incr": -0.044138537,
-     "r-upperarm-scale-depth-incr": -0.044138537,
-     "l-lowerarm-scale-vert-incr": -0.017697707,
-     "r-lowerarm-scale-vert-incr": -0.017697707,
-     "measure-lowerarm-length-incr": 0.389713693,
-     "l-upperarm-muscle-incr": -0.071344754,
-     "r-upperarm-muscle-incr": -0.071344754,
-     "l-upperarm-scale-vert-incr": -0.028063901,
-     "r-upperarm-scale-vert-incr": -0.028063901,
-     "breast-dist-incr": -0.100346749,
-     "buttocks-volume-incr": -0.081667447,
-     "measure-ankle-circ-incr": -0.545942103,
-     "measure-wrist-circ-incr": -0.056329688,
-     "hip-scale-horiz-incr": -0.135401659,
-     "hip-scale-depth-incr": -0.113366,
-     "hip-scale-vert-incr": -0.149434895,
-     "measure-calf-circ-incr": -0.015643598,
-     "measure-lowerleg-height-incr": 0.155378507,
-     "l-upperleg-fat-incr": -0.087764769,
-     "r-upperleg-fat-incr": -0.087764769,
-     "l-lowerleg-muscle-incr": -0.011445516,
-     "r-lowerleg-muscle-incr": -0.011445516,
-     "l-lowerleg-scale-depth-incr": -0.136481768,
-     "r-lowerleg-scale-depth-incr": -0.136481768,
-     "l-lowerleg-scale-vert-incr": 0.128981574,
-     "r-lowerleg-scale-vert-incr": 0.128981574,
-     "l-upperleg-scale-depth-incr": 0.113996157,
-     "r-upperleg-scale-depth-incr": 0.113996157,
-     "l-upperleg-scale-horiz-incr": -0.000663735,
-     "r-upperleg-scale-horiz-incr": -0.000663735,
-     "upperlegs-height-incr": 0.122174385,
-     "l-lowerleg-fat-incr": -0.033539075,
-     "r-lowerleg-fat-incr": -0.033539075,
-     "l-lowerleg-scale-horiz-incr": -0.048751696,
-     "r-lowerleg-scale-horiz-incr": -0.048751696,
-     "lowerlegs-height-incr": 0.134171722,
-     "measure-upperleg-height-incr": 0.133148459,
-     "l-upperleg-muscle-incr": 0.053777654,
-     "r-upperleg-muscle-incr": 0.053777654,
-     "measure-knee-circ-incr": -0.359604254,
-     "measure-thigh-circ-incr": 0.320303656,
-     "l-upperleg-scale-vert-incr": 0.021163991,
-     "r-upperleg-scale-vert-incr": 0.021163991,
-     "measure-neck-circ-incr": -0.842499416,
-     "measure-neck-height-incr": -0.214682394,
-     "neck-scale-depth-incr": -0.188869281,
-     "neck-back-scale-depth-incr": -0.106971527,
-     "neck-scale-horiz-incr": 0.305151867,
-     "neck-scale-vert-incr": 0.014039647,
-     "torso-muscle-pectoral-incr": -0.574475768,
-     "measure-underbust-circ-incr": -0.145515294,
-     "torso-scale-horiz-incr": 0.074500706,
-     "torso-scale-depth-incr": -0.116406083,
-     "measure-napetowaist-dist-incr": 0.164339872,
-     "measure-waisttohip-dist-incr": 0.158167828,
-     "measure-shoulder-dist-incr": -0.194652647,
-     "measure-hips-circ-incr": -0.114209272,
-     "torso-vshape-incr": 0.023249259,
-     "torso-muscle-dorsi-incr": -0.022794437,
-     "measure-waist-circ-incr": -0.330770834,
-     "measure-frontchest-dist-incr": 0.832409805,
-     "torso-scale-vert-incr": 0.131305724,
-     "measure-bust-circ-incr": 0.03168185
+     "l-lowerarm-scale-depth-incr": 0.006431611,
+     "r-lowerarm-scale-depth-incr": 0.006431611,
+     "l-upperarm-scale-horiz-incr": 0.311108599,
+     "r-upperarm-scale-horiz-incr": 0.311108599,
+     "l-upperarm-fat-incr": -0.33033228,
+     "r-upperarm-fat-incr": -0.33033228,
+     "measure-upperarm-length-incr": 0.377308069,
+     "l-lowerarm-fat-incr": -0.035178531,
+     "r-lowerarm-fat-incr": -0.035178531,
+     "l-lowerarm-scale-horiz-incr": 0.342271916,
+     "r-lowerarm-scale-horiz-incr": 0.342271916,
+     "l-lowerarm-muscle-incr": 0.020237891,
+     "r-lowerarm-muscle-incr": 0.020237891,
+     "l-upperarm-shoulder-muscle-incr": -0.542527468,
+     "r-upperarm-shoulder-muscle-incr": -0.542527468,
+     "measure-upperarm-circ-incr": 0.047767196,
+     "l-upperarm-scale-depth-incr": 0.069574405,
+     "r-upperarm-scale-depth-incr": 0.069574405,
+     "l-lowerarm-scale-vert-incr": 0.014317425,
+     "r-lowerarm-scale-vert-incr": 0.014317425,
+     "measure-lowerarm-length-incr": 0.458565418,
+     "l-upperarm-muscle-incr": -0.019363238,
+     "r-upperarm-muscle-incr": -0.019363238,
+     "l-upperarm-scale-vert-incr": 0.060540684,
+     "r-upperarm-scale-vert-incr": 0.060540684,
+     "breast-dist-incr": -0.093463545,
+     "buttocks-volume-incr": -0.330427573,
+     "measure-ankle-circ-incr": -0.545407479,
+     "measure-wrist-circ-incr": -0.141459339,
+     "hip-scale-horiz-incr": -0.176010328,
+     "hip-scale-depth-incr": 0.00576753,
+     "hip-scale-vert-incr": -0.218656472,
+     "measure-calf-circ-incr": 0.024639446,
+     "measure-lowerleg-height-incr": 0.168933577,
+     "l-upperleg-fat-incr": -0.092866819,
+     "r-upperleg-fat-incr": -0.092866819,
+     "l-lowerleg-muscle-incr": 0.017649677,
+     "r-lowerleg-muscle-incr": 0.017649677,
+     "l-lowerleg-scale-depth-incr": -0.121672044,
+     "r-lowerleg-scale-depth-incr": -0.121672044,
+     "l-lowerleg-scale-vert-incr": 0.140236193,
+     "r-lowerleg-scale-vert-incr": 0.140236193,
+     "l-upperleg-scale-depth-incr": 0.086868997,
+     "r-upperleg-scale-depth-incr": 0.086868997,
+     "l-upperleg-scale-horiz-incr": 0.173417475,
+     "r-upperleg-scale-horiz-incr": 0.173417475,
+     "upperlegs-height-incr": 0.120668457,
+     "l-lowerleg-fat-incr": -0.006425137,
+     "r-lowerleg-fat-incr": -0.006425137,
+     "l-lowerleg-scale-horiz-incr": -0.020610161,
+     "r-lowerleg-scale-horiz-incr": -0.020610161,
+     "lowerlegs-height-incr": 0.146171331,
+     "measure-upperleg-height-incr": 0.131430533,
+     "l-upperleg-muscle-incr": 0.078716322,
+     "r-upperleg-muscle-incr": 0.078716322,
+     "measure-knee-circ-incr": -0.45681521,
+     "measure-thigh-circ-incr": 0.259088184,
+     "l-upperleg-scale-vert-incr": 0.006034086,
+     "r-upperleg-scale-vert-incr": 0.006034086,
+     "measure-neck-circ-incr": -0.375437829,
+     "measure-neck-height-incr": 0.189601725,
+     "neck-scale-depth-incr": -0.536972249,
+     "neck-back-scale-depth-incr": -0.079719033,
+     "neck-scale-horiz-incr": -0.60429416,
+     "neck-scale-vert-incr": -0.104865221,
+     "torso-muscle-pectoral-incr": -0.620316833,
+     "measure-underbust-circ-incr": -0.005910271,
+     "torso-scale-horiz-incr": -0.026742573,
+     "torso-scale-depth-incr": -0.229255538,
+     "measure-napetowaist-dist-incr": 0.237147353,
+     "measure-waisttohip-dist-incr": 0.121031979,
+     "measure-shoulder-dist-incr": -0.191872711,
+     "measure-hips-circ-incr": -0.092048492,
+     "torso-vshape-incr": 0.224516692,
+     "torso-muscle-dorsi-incr": 0.064779186,
+     "measure-waist-circ-incr": -0.192675602,
+     "measure-frontchest-dist-incr": 0.261831163,
+     "torso-scale-vert-incr": 0.095208657,
+     "measure-bust-circ-incr": 0.209688449
     }
    },
    "measurements": {
-    "height": 188.0001,
-    "neck": 32.0103,
-    "shoulderWidth": 36.0009,
-    "bust": 82.0054,
-    "underbust": 70.0016,
-    "waist": 64.0013,
-    "highHip": 83.001,
-    "hip": 91.0005,
-    "upperArm": 23.0006,
-    "elbow": 22.5003,
-    "wrist": 14.0002,
-    "thigh": 50.0025,
-    "knee": 33.0009,
-    "calf": 32.9995,
-    "ankle": 19.0008,
-    "napeToWaist": 45.9984,
-    "frontLength": 44.0099,
-    "bustSeparation": 17.0003,
-    "armLength": 66.0026,
-    "insideLeg": 90.9999,
-    "waistHeight": 117.0011,
-    "armscyeDepth": 19.9961,
-    "highBust": 83.0113,
-    "acrossBack": 38.9985,
-    "acrossChest": 33.999,
-    "shoulderLength": 11.0045,
-    "shoulderToBust": 28.5031,
-    "bustHeight": 140.9991,
-    "waistToHip": 19.9978,
-    "crotchDepth": 26.0012,
-    "crotchLength": 58.5019,
-    "upperArmLength": 38.0013,
-    "forearmLength": 28.0013,
-    "underarmLength": 53.996
+    "height": 187.9999,
+    "neck": 32.0064,
+    "shoulderWidth": 36.0023,
+    "bust": 84.0055,
+    "underbust": 69.9987,
+    "waist": 64.0067,
+    "highHip": 83.0052,
+    "hip": 91.0021,
+    "upperArm": 23.0035,
+    "elbow": 22.9999,
+    "wrist": 13.9997,
+    "thigh": 50.0053,
+    "knee": 32.9988,
+    "calf": 33.001,
+    "ankle": 19.0023,
+    "napeToWaist": 45.9951,
+    "frontLength": 43.9979,
+    "bustSeparation": 17.0014,
+    "armLength": 66.0055,
+    "insideLeg": 90.997,
+    "waistHeight": 116.9956,
+    "armscyeDepth": 20.4942,
+    "highBust": 82.5013,
+    "acrossBack": 37.504,
+    "acrossChest": 32.9976,
+    "shoulderLength": 11.4886,
+    "shoulderToBust": 29.0083,
+    "bustHeight": 140.0088,
+    "waistToHip": 19.4992,
+    "crotchDepth": 25.9987,
+    "crotchLength": 58.5038,
+    "upperArmLength": 38.0027,
+    "forearmLength": 28.0027,
+    "underarmLength": 53.992
    },
    "geometry": {
     "boundsMin": [
-     -29.624,
+     -29.3994,
      0,
-     -7.5048
+     -7.2434
     ],
     "boundsMax": [
-     29.6253,
-     188.0001,
-     21.9761
+     29.4012,
+     187.9999,
+     22.1008
     ],
     "centroid": [
-     0.0001,
-     107.626,
-     8.1141
+     0.0002,
+     107.4651,
+     8.657
     ],
     "samples": [
      [
-      -3.4428,
-      176.9787,
-      14.8927
+      -3.4361,
+      177.0944,
+      15.2451
      ],
      [
-      -4.5354,
-      175.6207,
-      14.0354
+      -4.525,
+      175.7038,
+      14.4667
      ],
      [
-      -0.8754,
-      172.6163,
-      17.1943
+      -0.858,
+      172.8461,
+      17.5287
      ],
      [
-      -2.0138,
-      170.371,
-      16.1203
+      -1.9672,
+      170.5959,
+      16.4144
      ],
      [
-      -0.6768,
-      170.5558,
-      15.7016
+      -0.6677,
+      170.8118,
+      16.0212
      ],
      [
-      -1.0223,
-      173.1656,
-      6.9724
+      -1.0257,
+      173.3238,
+      7.3876
      ],
      [
-      -6.5814,
-      163.7137,
-      2.9971
+      -5.5613,
+      163.7478,
+      3.7318
      ],
      [
-      -5.4673,
-      179.1358,
-      -1.3246
+      -5.5117,
+      178.9615,
+      -0.6264
      ],
      [
-      -2.7118,
-      176.208,
-      14.3406
+      -2.6975,
+      176.3134,
+      14.6661
      ],
      [
-      -2.8835,
-      178.2275,
-      13.105
+      -2.8671,
+      178.3402,
+      13.4084
      ],
      [
-      -13.8352,
-      151.3941,
-      9.2501
+      -13.1406,
+      151.448,
+      9.4747
      ],
      [
-      -3.045,
-      151.8564,
-      9.9297
+      -2.8187,
+      152.1962,
+      10.0773
      ],
      [
-      -20.272,
-      144.8852,
-      -0.5257
+      -19.7566,
+      144.2571,
+      0.659
      ],
      [
-      -9.4615,
-      141.9149,
-      13.0808
+      -9.4914,
+      141.0464,
+      14.152
      ],
      [
-      -26.9729,
-      76.9307,
-      8.42
+      -26.818,
+      76.3494,
+      9.2421
      ],
      [
-      -26.4486,
-      75.8827,
-      8.3988
+      -26.3047,
+      75.3093,
+      9.2241
      ],
      [
-      -27.7708,
-      77.0222,
-      4.2133
+      -27.6314,
+      76.4263,
+      5.0964
      ],
      [
-      -27.7181,
-      77.2297,
-      1.6878
+      -27.5996,
+      76.623,
+      2.592
      ],
      [
-      -27.867,
-      82.917,
-      0.9287
+      -27.7297,
+      82.2398,
+      1.8208
      ],
      [
-      -26.6902,
-      81.8802,
-      -0.0027
+      -26.5839,
+      81.2019,
+      0.9028
      ],
      [
-      -24.0824,
-      84.7071,
-      9.9772
+      -23.9185,
+      84.0224,
+      10.7286
      ],
      [
-      -28.5966,
-      81.018,
-      1.392
+      -28.4557,
+      80.3657,
+      2.2966
      ],
      [
-      -27.2506,
-      82.9565,
-      1.4311
+      -27.1222,
+      82.2778,
+      2.3201
      ],
      [
-      -26.3836,
-      84.787,
-      5.3674
+      -26.2227,
+      84.0922,
+      6.1955
      ],
      [
-      -28.9855,
-      81.7067,
-      4.2144
+      -28.815,
+      81.0593,
+      5.0876
      ],
      [
-      -24.8303,
-      114.5719,
-      0.1893
+      -24.6503,
+      113.9922,
+      0.5912
      ],
      [
-      -29.3249,
-      84.5186,
-      2.7458
+      -29.1521,
+      83.8291,
+      3.629
      ],
      [
-      -3.5818,
-      169.8128,
-      12.1376
+      -3.6114,
+      170.0282,
+      12.5287
      ],
      [
-      -17.627,
-      131.183,
-      0.5024
+      -17.3492,
+      130.3968,
+      1.1348
      ],
      [
-      -10.0469,
-      131.2876,
-      -0.7152
+      -9.9898,
+      131.6637,
+      -0.7047
      ],
      [
-      -8.1124,
-      119.4792,
-      9.863
+      -7.9307,
+      119.4513,
+      10.2711
      ],
      [
-      -5.4472,
-      88.7135,
-      -2.7153
+      -5.6406,
+      88.4226,
+      -2.1993
      ],
      [
-      -12.4305,
-      112.6254,
-      -0.5532
+      -12.248,
+      113.0549,
+      -0.6606
      ],
      [
-      -7.1099,
-      66.3242,
-      9.7791
+      -6.6094,
+      66.0446,
+      10.2159
      ],
      [
-      -6.4685,
-      48.701,
-      1.4487
+      -5.7534,
+      48.9062,
+      1.7761
      ],
      [
-      -13.8253,
-      20.3484,
-      1.7922
+      -13.322,
+      20.9833,
+      2.2077
      ],
      [
-      -8.0126,
-      2.2053,
-      21.4777
+      -7.1813,
+      2.3466,
+      21.5953
      ],
      [
-      -4.9159,
-      176.0472,
-      13.724
+      -4.8963,
+      176.1316,
+      14.1411
      ],
      [
-      -2.1449,
-      166.364,
-      14.4102
+      -2.0832,
+      166.6684,
+      14.8062
      ],
      [
-      -1.1792,
-      170.1321,
-      15.8571
+      -1.1764,
+      170.3594,
+      16.1914
      ],
      [
-      -8.305,
-      173.9693,
-      4.648
+      -8.2752,
+      173.968,
+      5.3173
      ],
      [
-      -7.1955,
-      174.7049,
-      5.3066
+      -7.1343,
+      174.7161,
+      5.9448
      ],
      [
-      -6.9889,
-      173.2088,
-      4.8945
+      -6.9452,
+      173.2142,
+      5.5706
      ],
      [
-      -10.775,
-      0.9621,
-      19.6107
+      -10.0194,
+      0.9505,
+      19.8274
      ],
      [
-      -12.4566,
-      1.8297,
-      18.6503
+      -11.7007,
+      1.86,
+      18.8612
      ],
      [
-      -7.149,
-      3.7616,
-      15.9494
+      -6.4307,
+      3.5462,
+      16.3094
      ],
      [
-      -12.5402,
-      1.9797,
-      -2.7449
+      -11.8734,
+      2.1909,
+      -2.0985
      ],
      [
-      -8.3421,
-      0.3678,
-      -0.0448
+      -7.5838,
+      0.4561,
+      0.6819
      ],
      [
-      -14.2638,
-      1.8354,
-      17.0573
+      -13.4667,
+      1.8894,
+      17.1013
      ],
      [
-      -12.6556,
-      0.407,
-      14.5535
+      -11.945,
+      0.5434,
+      15.0773
      ],
      [
-      4.5731,
-      177.0421,
-      14.2667
+      4.5442,
+      177.1751,
+      14.6645
      ],
      [
-      2.5608,
-      179.6833,
-      15.6462
+      2.553,
+      179.8075,
+      15.9799
      ],
      [
-      2.8528,
-      169.528,
-      15.2986
+      2.811,
+      169.7515,
+      15.6313
      ],
      [
-      0.9965,
-      170.1589,
-      15.9228
+      0.9872,
+      170.4,
+      16.2602
      ],
      [
-      0.7191,
-      167.4526,
-      5.9999
+      0.7247,
+      167.5293,
+      6.4224
      ],
      [
-      5.3367,
-      164.0884,
-      1.0475
+      4.5677,
+      164.0385,
+      1.8689
      ],
      [
-      2.684,
-      165.9819,
-      10.6639
+      2.5205,
+      166.2158,
+      11.0791
      ],
      [
-      3.452,
-      177.8861,
-      14.0387
+      3.435,
+      178.0179,
+      14.3376
      ],
      [
-      4.474,
-      176.6954,
-      12.3817
+      4.4666,
+      176.7895,
+      12.7052
      ],
      [
-      14.606,
-      145.7153,
-      6.715
+      14.5644,
+      145.6222,
+      7.2911
      ],
      [
-      20.3285,
-      156.8248,
-      3.2547
+      19.731,
+      155.7379,
+      3.6136
      ],
      [
-      20.7747,
-      138.6394,
-      -0.146
+      20.5015,
+      137.9237,
+      0.5734
      ],
      [
-      13.4918,
-      140.5108,
-      10.4166
+      13.4814,
+      139.8706,
+      10.7783
      ],
      [
-      28.0809,
-      79.5972,
-      7.604
+      27.9079,
+      78.9834,
+      8.4366
      ],
      [
-      28.9164,
-      81.2066,
-      4.7746
+      28.7466,
+      80.5608,
+      5.6314
      ],
      [
-      26.7714,
-      74.3116,
-      4.2686
+      26.6562,
+      73.7427,
+      5.1452
      ],
      [
-      26.6415,
-      78.2625,
-      1.3798
+      26.5388,
+      77.6333,
+      2.2843
      ],
      [
-      27.792,
-      82.7008,
-      0.8205
+      27.6561,
+      82.0221,
+      1.7074
      ],
      [
-      22.6998,
-      83.3109,
-      12.0535
+      22.5476,
+      82.6401,
+      12.7811
      ],
      [
-      27.3886,
-      78.3521,
-      7.6639
+      27.2249,
+      77.7675,
+      8.512
      ],
      [
-      25.8093,
-      76.5543,
-      9.2927
+      25.6667,
+      75.9697,
+      10.0944
      ],
      [
-      26.5166,
-      80.838,
-      -1.2428
+      26.4209,
+      80.1668,
+      -0.3229
      ],
      [
-      29.4,
-      89.9197,
-      5.3888
+      29.1631,
+      89.1636,
+      6.2287
      ],
      [
-      20.467,
-      122.0321,
-      6.0646
+      20.2252,
+      121.1623,
+      6.5764
      ],
      [
-      25.0221,
-      99.2278,
-      5.1638
+      24.768,
+      98.4038,
+      5.92
      ],
      [
-      25.6149,
-      88.887,
-      9.7096
+      25.4211,
+      88.148,
+      10.4687
      ],
      [
-      6.6667,
-      151.3698,
-      -5.8463
+      6.4111,
+      151.2482,
+      -5.1299
      ],
      [
-      25.7119,
-      93.1034,
-      2.5505
+      25.5085,
+      92.2848,
+      3.3529
      ],
      [
-      8.002,
-      118.4588,
-      -0.8646
+      7.3022,
+      118.5809,
+      -1.0232
      ],
      [
-      4.4655,
-      101.0406,
-      -7.5048
+      4.9912,
+      101.4987,
+      -7.2434
      ],
      [
-      5.4643,
-      110.3322,
-      12.3594
+      5.5035,
+      110.5874,
+      12.9775
      ],
      [
-      13.3828,
-      69.6832,
-      -2.8867
+      13.2843,
+      69.1856,
+      -2.0555
      ],
      [
-      14.1753,
-      52.7958,
-      2.3939
+      13.5064,
+      53.1508,
+      3.2809
      ],
      [
-      11.6899,
-      25.6339,
-      4.2631
+      11.1947,
+      26.1185,
+      4.8308
      ],
      [
-      5.946,
-      1.5763,
-      18.528
+      5.2197,
+      1.6467,
+      18.6988
      ],
      [
-      3.2087,
-      174.2935,
-      14.7226
+      3.2113,
+      174.3515,
+      15.1412
      ],
      [
-      6.5878,
-      173.744,
-      10.5315
+      6.5915,
+      173.8349,
+      11.0363
      ],
      [
-      1.1334,
-      171.0768,
-      15.5216
+      1.1179,
+      171.3269,
+      15.8412
      ],
      [
-      8.2229,
-      175.2288,
-      4.7007
+      8.2057,
+      175.1988,
+      5.3251
      ],
      [
-      7.0122,
-      173.7638,
-      5.3242
+      6.9455,
+      173.7876,
+      5.9864
      ],
      [
-      7.1881,
-      176.6955,
-      7.3247
+      7.1503,
+      176.7752,
+      7.8802
      ],
      [
-      11.2921,
-      1.6694,
-      20.9031
+      10.5371,
+      1.6526,
+      21.0173
      ],
      [
-      13.7635,
-      0.6367,
-      18.0451
+      13.0478,
+      0.6746,
+      18.3217
      ],
      [
-      7.3451,
-      2.3265,
-      20.2118
+      6.5767,
+      2.3441,
+      20.3906
      ],
      [
-      11.5121,
-      1.0087,
-      -3.2196
+      10.8932,
+      1.1449,
+      -2.6496
      ],
      [
-      11.8728,
-      0.3998,
-      3.9871
+      11.1276,
+      0.3645,
+      4.572
      ],
      [
-      14.7867,
-      1.4316,
-      17.5859
+      13.958,
+      1.4793,
+      17.5773
      ],
      [
-      8.6296,
-      0.2721,
-      15.3829
+      7.9908,
+      0.4065,
+      15.8944
      ],
      [
-      -1.4201,
-      169.6921,
-      14.0785
+      -1.4251,
+      169.9511,
+      14.3748
      ],
      [
-      0.5309,
-      171.0028,
-      9.964
+      0.5333,
+      171.2728,
+      10.2725
      ],
      [
-      -2.9654,
-      176.351,
-      14.7683
+      -2.9566,
+      176.4553,
+      15.1144
      ]
     ],
     "joints": {
      "root": [
       0,
-      102.7649,
-      2.2216
+      103.1599,
+      2.7729
      ],
      "upperarm01.L": [
-      17.0601,
-      152.6547,
-      3.5858
+      16.8234,
+      152.2514,
+      4.4158
      ],
      "lowerarm01.L": [
-      22.6036,
-      121.2156,
-      3.5858
+      22.4375,
+      120.4125,
+      4.4158
      ],
      "wrist.L": [
-      27.4666,
-      93.6363,
-      3.5858
+      27.3009,
+      92.8307,
+      4.4158
      ],
      "upperleg01.L": [
-      10.1445,
-      101.2223,
-      1.5041
+      9.5427,
+      101.5766,
+      2.1468
      ],
      "lowerleg01.L": [
-      10.1445,
-      55.574,
-      1.5041
+      9.5427,
+      55.4071,
+      2.1468
      ],
      "foot.L": [
-      10.1445,
-      8.2698,
-      1.5041
+      9.5427,
+      8.4965,
+      2.1468
      ],
      "neck01": [
       0,
-      162.2079,
-      1.8004
+      161.4313,
+      2.284
      ],
      "head": [
       0,
-      172.2712,
-      5.3781
+      172.2765,
+      5.9394
      ]
     }
    }
@@ -4909,22 +4909,22 @@
   "plus170": {
    "params": {
     "z": [
-     -0.190612823,
-     -0.359723551,
-     0.864509347,
-     0.60603446,
-     0.945837376,
-     -2.618166998,
-     0.902222699,
-     1.152787036,
-     0.165705525,
-     -1.681609869,
-     2.684566851,
-     -0.429208144,
-     2.039825424,
-     0.514795053,
-     -2.042461102,
-     0.173838752,
+     -0.193510288,
+     -0.312264135,
+     0.865259842,
+     0.452293762,
+     0.934082889,
+     -2.523149583,
+     0.710619547,
+     1.253932385,
+     0.320637425,
+     -1.557620443,
+     2.802047724,
+     -0.236678881,
+     1.911262988,
+     0.473998524,
+     -2.010016492,
+     0.664357467,
      -0.533312857,
      2.391851187,
      -0.266497731,
@@ -4951,691 +4951,691 @@
      -1.587577939
     ],
     "local": {
-     "l-lowerarm-scale-depth-incr": -0.007658749,
-     "r-lowerarm-scale-depth-incr": -0.007658749,
-     "l-upperarm-scale-horiz-incr": 0.004499315,
-     "r-upperarm-scale-horiz-incr": 0.004499315,
-     "l-upperarm-fat-incr": 0.484892956,
-     "r-upperarm-fat-incr": 0.484892956,
-     "measure-upperarm-length-incr": 0.045001259,
-     "l-lowerarm-fat-incr": 0.019770582,
-     "r-lowerarm-fat-incr": 0.019770582,
-     "l-lowerarm-scale-horiz-incr": 0.042189075,
-     "r-lowerarm-scale-horiz-incr": 0.042189075,
-     "l-lowerarm-muscle-incr": -0.029813249,
-     "r-lowerarm-muscle-incr": -0.029813249,
-     "l-upperarm-shoulder-muscle-incr": 0.167140221,
-     "r-upperarm-shoulder-muscle-incr": 0.167140221,
-     "measure-upperarm-circ-incr": 0.227487052,
-     "l-upperarm-scale-depth-incr": 0.086147507,
-     "r-upperarm-scale-depth-incr": 0.086147507,
-     "l-lowerarm-scale-vert-incr": -0.010988112,
-     "r-lowerarm-scale-vert-incr": -0.010988112,
-     "measure-lowerarm-length-incr": 0.056281462,
-     "l-upperarm-muscle-incr": 0.151862052,
-     "r-upperarm-muscle-incr": 0.151862052,
-     "l-upperarm-scale-vert-incr": 0.08808977,
-     "r-upperarm-scale-vert-incr": 0.08808977,
-     "breast-dist-incr": 0.522795761,
-     "buttocks-volume-incr": 0.178054715,
-     "measure-ankle-circ-incr": 0.042431851,
-     "measure-wrist-circ-incr": 0.268114965,
-     "hip-scale-horiz-incr": 0.341131468,
-     "hip-scale-depth-incr": 0.387545655,
-     "hip-scale-vert-incr": 0.243724955,
-     "measure-calf-circ-incr": 0.031959385,
-     "measure-lowerleg-height-incr": -0.173251803,
-     "l-upperleg-fat-incr": 0.336747462,
-     "r-upperleg-fat-incr": 0.336747462,
-     "l-lowerleg-muscle-incr": 0.023457349,
-     "r-lowerleg-muscle-incr": 0.023457349,
-     "l-lowerleg-scale-depth-incr": 0.06718376,
-     "r-lowerleg-scale-depth-incr": 0.06718376,
-     "l-lowerleg-scale-vert-incr": -0.144066792,
-     "r-lowerleg-scale-vert-incr": -0.144066792,
-     "l-upperleg-scale-depth-incr": 0.326732175,
-     "r-upperleg-scale-depth-incr": 0.326732175,
-     "l-upperleg-scale-horiz-incr": 0.198657053,
-     "r-upperleg-scale-horiz-incr": 0.198657053,
-     "upperlegs-height-incr": -0.111078817,
-     "l-lowerleg-fat-incr": 0.006970223,
-     "r-lowerleg-fat-incr": 0.006970223,
-     "l-lowerleg-scale-horiz-incr": 0.009037755,
-     "r-lowerleg-scale-horiz-incr": 0.009037755,
-     "lowerlegs-height-incr": -0.149959432,
-     "measure-upperleg-height-incr": -0.121166319,
-     "l-upperleg-muscle-incr": 0.172984368,
-     "r-upperleg-muscle-incr": 0.172984368,
-     "measure-knee-circ-incr": 0.3296572,
-     "measure-thigh-circ-incr": 0.737014283,
-     "l-upperleg-scale-vert-incr": 0.017999034,
-     "r-upperleg-scale-vert-incr": 0.017999034,
-     "measure-neck-circ-incr": -0.25564451,
-     "measure-neck-height-incr": -0.453329529,
-     "neck-scale-depth-incr": 0.039064659,
-     "neck-back-scale-depth-incr": 0.064854808,
-     "neck-scale-horiz-incr": -0.227296778,
-     "neck-scale-vert-incr": -0.096239271,
-     "torso-muscle-pectoral-incr": 1.025023986,
-     "measure-underbust-circ-incr": 0.515576365,
-     "torso-scale-horiz-incr": 0.269275048,
-     "torso-scale-depth-incr": 0.538423458,
-     "measure-napetowaist-dist-incr": -0.033984077,
-     "measure-waisttohip-dist-incr": -0.078321157,
-     "measure-shoulder-dist-incr": 0.511933464,
-     "measure-hips-circ-incr": 0.10279269,
-     "torso-vshape-incr": 0.12505432,
-     "torso-muscle-dorsi-incr": 0.301207846,
-     "measure-waist-circ-incr": 1.170099323,
-     "measure-frontchest-dist-incr": -0.423670172,
-     "torso-scale-vert-incr": 0.044146441,
-     "measure-bust-circ-incr": 0.089795556
+     "l-lowerarm-scale-depth-incr": 0.17562947,
+     "r-lowerarm-scale-depth-incr": 0.17562947,
+     "l-upperarm-scale-horiz-incr": 0.019637916,
+     "r-upperarm-scale-horiz-incr": 0.019637916,
+     "l-upperarm-fat-incr": 0.446259917,
+     "r-upperarm-fat-incr": 0.446259917,
+     "measure-upperarm-length-incr": 0.032662105,
+     "l-lowerarm-fat-incr": 0.744368051,
+     "r-lowerarm-fat-incr": 0.744368051,
+     "l-lowerarm-scale-horiz-incr": 0.039953834,
+     "r-lowerarm-scale-horiz-incr": 0.039953834,
+     "l-lowerarm-muscle-incr": 0.538386726,
+     "r-lowerarm-muscle-incr": 0.538386726,
+     "l-upperarm-shoulder-muscle-incr": 0.046386787,
+     "r-upperarm-shoulder-muscle-incr": 0.046386787,
+     "measure-upperarm-circ-incr": -0.04064182,
+     "l-upperarm-scale-depth-incr": 0.030247878,
+     "r-upperarm-scale-depth-incr": 0.030247878,
+     "l-lowerarm-scale-vert-incr": 0.16156134,
+     "r-lowerarm-scale-vert-incr": 0.16156134,
+     "measure-lowerarm-length-incr": 0.05516598,
+     "l-upperarm-muscle-incr": -0.047238191,
+     "r-upperarm-muscle-incr": -0.047238191,
+     "l-upperarm-scale-vert-incr": -0.060797743,
+     "r-upperarm-scale-vert-incr": -0.060797743,
+     "breast-dist-incr": 0.556474001,
+     "buttocks-volume-incr": 0.146830339,
+     "measure-ankle-circ-incr": 0.043106361,
+     "measure-wrist-circ-incr": -0.358314788,
+     "hip-scale-horiz-incr": 0.343990687,
+     "hip-scale-depth-incr": 0.404842418,
+     "hip-scale-vert-incr": 0.28070205,
+     "measure-calf-circ-incr": 0.022713785,
+     "measure-lowerleg-height-incr": -0.168999008,
+     "l-upperleg-fat-incr": 0.326212983,
+     "r-upperleg-fat-incr": 0.326212983,
+     "l-lowerleg-muscle-incr": 0.016293316,
+     "r-lowerleg-muscle-incr": 0.016293316,
+     "l-lowerleg-scale-depth-incr": 0.059760049,
+     "r-lowerleg-scale-depth-incr": 0.059760049,
+     "l-lowerleg-scale-vert-incr": -0.140350138,
+     "r-lowerleg-scale-vert-incr": -0.140350138,
+     "l-upperleg-scale-depth-incr": 0.308317326,
+     "r-upperleg-scale-depth-incr": 0.308317326,
+     "l-upperleg-scale-horiz-incr": 0.199788222,
+     "r-upperleg-scale-horiz-incr": 0.199788222,
+     "upperlegs-height-incr": -0.110041534,
+     "l-lowerleg-fat-incr": 0.002911197,
+     "r-lowerleg-fat-incr": 0.002911197,
+     "l-lowerleg-scale-horiz-incr": 0.003403151,
+     "r-lowerleg-scale-horiz-incr": 0.003403151,
+     "lowerlegs-height-incr": -0.146171514,
+     "measure-upperleg-height-incr": -0.120053192,
+     "l-upperleg-muscle-incr": 0.166941306,
+     "r-upperleg-muscle-incr": 0.166941306,
+     "measure-knee-circ-incr": 0.323560682,
+     "measure-thigh-circ-incr": 0.714098124,
+     "l-upperleg-scale-vert-incr": 0.009414613,
+     "r-upperleg-scale-vert-incr": 0.009414613,
+     "measure-neck-circ-incr": -0.324274616,
+     "measure-neck-height-incr": -0.374664686,
+     "neck-scale-depth-incr": -0.195049083,
+     "neck-back-scale-depth-incr": 0.03921239,
+     "neck-scale-horiz-incr": -0.28362279,
+     "neck-scale-vert-incr": -0.101548378,
+     "torso-muscle-pectoral-incr": 1.250060937,
+     "measure-underbust-circ-incr": 0.44163007,
+     "torso-scale-horiz-incr": 0.235687694,
+     "torso-scale-depth-incr": 0.476524475,
+     "measure-napetowaist-dist-incr": -0.008105273,
+     "measure-waisttohip-dist-incr": -0.092069576,
+     "measure-shoulder-dist-incr": 0.475454617,
+     "measure-hips-circ-incr": 0.097900656,
+     "torso-vshape-incr": 0.170184523,
+     "torso-muscle-dorsi-incr": 0.234200475,
+     "measure-waist-circ-incr": 1.181574291,
+     "measure-frontchest-dist-incr": -0.44521939,
+     "torso-scale-vert-incr": 0.01307374,
+     "measure-bust-circ-incr": 0.154091488
     }
    },
    "measurements": {
-    "height": 170.0001,
-    "neck": 39.9981,
-    "shoulderWidth": 41.0012,
-    "bust": 125.0061,
-    "underbust": 110.0108,
-    "waist": 115.0006,
-    "highHip": 122.0001,
-    "hip": 135.0056,
-    "upperArm": 38.0009,
-    "elbow": 25.0005,
-    "wrist": 18.0008,
-    "thigh": 78.0014,
-    "knee": 46.0006,
-    "calf": 44.0006,
-    "ankle": 25.0003,
-    "napeToWaist": 42.0029,
-    "frontLength": 47.999,
-    "bustSeparation": 21.999,
-    "armLength": 58.9993,
-    "insideLeg": 76.9995,
-    "waistHeight": 104.9991,
-    "armscyeDepth": 21.0019,
-    "highBust": 122.0043,
-    "acrossBack": 46.0009,
-    "acrossChest": 37.5015,
-    "shoulderLength": 12.997,
-    "shoulderToBust": 37.5042,
-    "bustHeight": 123.0016,
-    "waistToHip": 21.0001,
-    "crotchDepth": 27.9996,
-    "crotchLength": 70.5,
-    "upperArmLength": 34.9996,
-    "forearmLength": 23.9996,
-    "underarmLength": 45.5011
+    "height": 169.9997,
+    "neck": 40.0185,
+    "shoulderWidth": 41.0009,
+    "bust": 125.0101,
+    "underbust": 110.0092,
+    "waist": 115.0012,
+    "highHip": 122.0015,
+    "hip": 135.0073,
+    "upperArm": 34.0015,
+    "elbow": 29.0012,
+    "wrist": 18.002,
+    "thigh": 78.0001,
+    "knee": 46.0014,
+    "calf": 44.0014,
+    "ankle": 25,
+    "napeToWaist": 42.0017,
+    "frontLength": 47.9968,
+    "bustSeparation": 21.9987,
+    "armLength": 58.9985,
+    "insideLeg": 76.9986,
+    "waistHeight": 104.9968,
+    "armscyeDepth": 21.0053,
+    "highBust": 123.5031,
+    "acrossBack": 46.0019,
+    "acrossChest": 37.5012,
+    "shoulderLength": 12.9953,
+    "shoulderToBust": 37.5068,
+    "bustHeight": 123.0052,
+    "waistToHip": 21.0003,
+    "crotchDepth": 27.9982,
+    "crotchLength": 70.5013,
+    "upperArmLength": 34.9993,
+    "forearmLength": 23.9993,
+    "underarmLength": 45.5022
    },
    "geometry": {
     "boundsMin": [
-     -31.2118,
+     -31.5008,
      0,
-     -14.197
+     -14.2536
     ],
     "boundsMax": [
-     31.2108,
-     170.0001,
-     23.4565
+     31.5001,
+     169.9997,
+     23.347
     ],
     "centroid": [
-     -0.0001,
-     96.3917,
-     7.9844
+     0,
+     96.3207,
+     7.9718
     ],
     "samples": [
      [
-      -3.4564,
-      158.9698,
-      14.7893
+      -3.4528,
+      158.9373,
+      14.8189
      ],
      [
-      -4.5047,
-      157.6568,
-      13.9553
+      -4.5063,
+      157.6339,
+      13.9727
      ],
      [
-      -0.8596,
-      154.4747,
-      16.8202
+      -0.8586,
+      154.4499,
+      16.8762
      ],
      [
-      -1.9691,
-      152.1794,
-      15.5858
+      -1.9697,
+      152.1407,
+      15.6108
      ],
      [
-      -0.6668,
-      152.307,
-      15.2171
+      -0.668,
+      152.2806,
+      15.239
      ],
      [
-      -1.0337,
-      155.13,
-      6.6373
+      -1.0339,
+      155.1215,
+      6.644
      ],
      [
-      -7.2814,
-      147.571,
-      2.308
+      -7.2439,
+      147.4811,
+      2.4501
      ],
      [
-      -5.4514,
-      161.4227,
-      -1.5854
+      -5.4449,
+      161.4505,
+      -1.5933
      ],
      [
-      -2.7365,
-      158.2246,
-      14.2273
+      -2.7353,
+      158.1982,
+      14.2568
      ],
      [
-      -2.9024,
-      160.2296,
-      13.038
+      -2.9025,
+      160.2064,
+      13.0734
      ],
      [
-      -15.0957,
-      136.7381,
-      13.1678
+      -15.243,
+      136.4917,
+      13.5725
      ],
      [
-      -4.0402,
-      137.2102,
-      15.3592
+      -4.1589,
+      137.067,
+      16.0316
      ],
      [
-      -23.581,
-      130.5531,
-      -3.5009
+      -23.31,
+      130.3787,
+      -3.2932
      ],
      [
-      -12.3781,
-      123.9165,
-      22.7851
+      -12.3274,
+      123.921,
+      22.8015
      ],
      [
-      -28.1873,
-      68.7621,
-      8.0538
+      -28.1277,
+      68.6076,
+      8.0252
      ],
      [
-      -27.6494,
-      67.7286,
-      8.0467
+      -27.5896,
+      67.5761,
+      8.0191
      ],
      [
-      -28.9859,
-      68.7767,
-      3.8457
+      -28.9162,
+      68.6218,
+      3.822
      ],
      [
-      -28.9277,
-      68.9442,
-      1.3312
+      -28.8538,
+      68.7893,
+      1.3114
      ],
      [
-      -29.16,
-      74.5785,
-      0.4947
+      -29.0913,
+      74.4156,
+      0.475
      ],
      [
-      -27.9139,
-      73.575,
-      -0.4158
+      -27.8429,
+      73.4152,
+      -0.4309
      ],
      [
-      -25.4135,
-      76.5684,
-      9.4513
+      -25.3713,
+      76.4055,
+      9.4266
      ],
      [
-      -29.875,
-      72.7136,
-      0.944
+      -29.8037,
+      72.5529,
+      0.9224
      ],
      [
-      -28.5089,
-      74.6344,
-      0.9391
+      -28.4416,
+      74.4719,
+      0.9204
      ],
      [
-      -27.6401,
-      76.5595,
-      4.8725
+      -27.5835,
+      76.3952,
+      4.8494
      ],
      [
-      -30.2721,
-      73.4299,
-      3.7592
+      -30.2069,
+      73.2668,
+      3.7335
      ],
      [
-      -26.6675,
-      102.8001,
-      -0.8376
+      -26.7615,
+      102.7823,
+      -2.713
      ],
      [
-      -30.6844,
-      76.2157,
-      2.2764
+      -30.6211,
+      76.0486,
+      2.252
      ],
      [
-      -3.6068,
-      151.5936,
-      11.7691
+      -3.6063,
+      151.5729,
+      11.7861
      ],
      [
-      -18.5708,
-      117.0566,
-      -1.841
+      -18.9102,
+      116.9917,
+      -1.5936
      ],
      [
-      -14.7901,
-      117.4693,
-      -4.4363
+      -14.6813,
+      117.2015,
+      -4.5835
      ],
      [
-      -12.4893,
-      106.4268,
-      18.4402
+      -12.4789,
+      106.4146,
+      18.4094
      ],
      [
-      -6.0416,
-      76.0147,
-      -6.5168
+      -6.017,
+      76.0537,
+      -6.6129
      ],
      [
-      -17.7082,
-      101.8167,
-      -4.3868
+      -17.7019,
+      101.8434,
+      -4.4334
      ],
      [
-      -6.8746,
-      59.0591,
-      12.2244
+      -6.9724,
+      59.2193,
+      12.1581
      ],
      [
-      -6.6351,
-      41.4423,
-      2.6274
+      -6.7406,
+      41.6116,
+      2.5816
      ],
      [
-      -16.5517,
-      18.5166,
-      1.9894
+      -16.5745,
+      18.463,
+      1.967
      ],
      [
-      -9.8134,
-      2.0715,
-      21.6483
+      -9.8642,
+      2.0441,
+      21.5997
      ],
      [
-      -4.889,
-      158.0881,
-      13.6284
+      -4.8895,
+      158.0661,
+      13.6442
      ],
      [
-      -2.0436,
-      148.2374,
-      13.9946
+      -2.0546,
+      148.2021,
+      13.9658
      ],
      [
       -1.1695,
-      151.8752,
-      15.3687
+      151.8475,
+      15.3863
      ],
      [
-      -8.3779,
-      156.1636,
-      4.463
+      -8.3788,
+      156.1519,
+      4.4532
      ],
      [
-      -7.2456,
-      156.9248,
-      5.1174
+      -7.244,
+      156.9138,
+      5.1112
      ],
      [
-      -7.0299,
-      155.4111,
-      4.7201
+      -7.0294,
+      155.3967,
+      4.7128
      ],
      [
-      -12.5502,
-      0.9256,
-      19.7071
+      -12.5856,
+      0.9158,
+      19.654
      ],
      [
-      -14.2491,
-      1.7753,
-      18.7527
+      -14.2814,
+      1.7584,
+      18.7033
      ],
      [
-      -8.8795,
-      3.9078,
-      15.9522
+      -8.921,
+      3.9195,
+      15.8946
      ],
      [
-      -14.2982,
-      1.8328,
-      -3.1099
+      -14.3225,
+      1.8082,
+      -3.1534
      ],
      [
-      -10.0828,
-      0.3211,
-      -0.4084
+      -10.1229,
+      0.3181,
+      -0.4685
      ],
      [
-      -16.098,
-      1.7626,
-      17.2594
+      -16.1308,
+      1.7426,
+      17.2323
      ],
      [
-      -14.4033,
-      0.2992,
-      14.4323
+      -14.4275,
+      0.2793,
+      14.3629
      ],
      [
-      4.5486,
-      159.0477,
-      14.2171
+      4.5492,
+      159.0114,
+      14.2404
      ],
      [
-      2.5675,
-      161.6212,
-      15.5302
+      2.5705,
+      161.6007,
+      15.577
      ],
      [
-      2.8262,
-      151.3377,
-      14.7509
+      2.8281,
+      151.3069,
+      14.7598
      ],
      [
-      1.0039,
-      151.9114,
-      15.4362
+      1.0047,
+      151.8831,
+      15.4536
      ],
      [
-      0.7021,
-      149.4867,
-      5.569
+      0.7017,
+      149.4728,
+      5.568
      ],
      [
-      5.6684,
-      147.855,
-      -0.5806
+      5.6016,
+      147.7682,
+      -0.3064
      ],
      [
-      2.6765,
-      147.6712,
-      10.6625
+      2.6713,
+      147.6357,
+      10.4764
      ],
      [
-      3.4488,
-      159.8864,
-      13.9304
+      3.4503,
+      159.8561,
+      13.9695
      ],
      [
-      4.4688,
-      158.7654,
-      12.2858
+      4.4698,
+      158.7406,
+      12.3162
      ],
      [
-      17.783,
-      129.2855,
-      7.3683
+      17.9098,
+      128.9183,
+      7.3963
      ],
      [
-      23.6028,
-      141.5579,
-      2.6067
+      23.5194,
+      141.3379,
+      2.6199
      ],
      [
-      24.1147,
-      124.7444,
-      -3.1976
+      23.5798,
+      124.5347,
+      -2.677
      ],
      [
-      17.5177,
-      124.2073,
-      16.2336
+      17.4633,
+      124.0886,
+      16.31
      ],
      [
-      29.3418,
-      71.4087,
-      7.1917
+      29.283,
+      71.2439,
+      7.1593
      ],
      [
-      30.21,
-      72.9586,
-      4.3667
+      30.1462,
+      72.7914,
+      4.3378
      ],
      [
-      27.9442,
-      66.1067,
-      3.9657
+      27.8733,
+      65.9524,
+      3.9392
      ],
      [
-      27.8474,
-      70.0005,
-      1.0163
+      27.7751,
+      69.8422,
+      0.9956
      ],
      [
-      29.0823,
-      74.3763,
-      0.4065
+      29.0131,
+      74.2099,
+      0.3851
      ],
      [
-      24.0007,
-      75.2551,
-      11.5856
+      23.9641,
+      75.0898,
+      11.5601
      ],
      [
-      28.628,
-      70.1764,
-      7.2681
+      28.5682,
+      70.0138,
+      7.2367
      ],
      [
-      27.0169,
-      68.4427,
-      8.9432
+      26.9612,
+      68.2843,
+      8.9122
      ],
      [
-      27.7543,
-      72.5361,
-      -1.6583
+      27.679,
+      72.3756,
+      -1.6746
      ],
      [
-      30.9284,
-      81.6664,
-      4.9012
+      30.7251,
+      81.4846,
+      4.8849
      ],
      [
-      21.6439,
-      109.5237,
-      5.8635
+      20.8846,
+      109.1884,
+      6.203
      ],
      [
-      25.289,
-      90.2947,
-      5.0826
+      24.5079,
+      89.9262,
+      5.1718
      ],
      [
-      26.9841,
-      80.7483,
-      9.188
+      26.9496,
+      80.5726,
+      9.1584
      ],
      [
-      6.6324,
-      136.6964,
-      -9.0744
+      6.6159,
+      136.4963,
+      -9.1793
      ],
      [
-      26.2385,
-      84.8282,
-      1.7692
+      26.2123,
+      84.614,
+      1.6556
      ],
      [
-      12.7501,
-      107.0466,
-      -7.2285
+      12.7346,
+      106.9825,
+      -7.1898
      ],
      [
-      5.2074,
-      89.1174,
-      -13.9831
+      5.2087,
+      89.0947,
+      -14.028
      ],
      [
-      7.0922,
-      98.1587,
-      20.0885
+      7.0911,
+      98.2324,
+      20.1517
      ],
      [
-      16.5163,
-      63.1376,
-      -6.0419
+      16.5642,
+      63.313,
+      -6.0726
      ],
      [
-      18.6719,
-      45.4413,
-      3.4805
+      18.6918,
+      45.576,
+      3.3826
      ],
      [
-      13.3033,
-      22.3259,
-      5.1725
+      13.3235,
+      22.3138,
+      5.1111
      ],
      [
-      7.6491,
-      1.5471,
-      18.649
+      7.6906,
+      1.5374,
+      18.6032
      ],
      [
-      3.1878,
-      156.3296,
-      14.5212
+      3.1836,
+      156.3016,
+      14.538
      ],
      [
-      6.679,
-      155.7796,
-      10.2869
+      6.6734,
+      155.7615,
+      10.2985
      ],
      [
-      1.1193,
-      152.8283,
-      15.0821
+      1.1195,
+      152.8056,
+      15.1058
      ],
      [
-      8.3112,
-      157.425,
-      4.5081
+      8.3104,
+      157.4144,
+      4.497
      ],
      [
-      7.0599,
-      155.9747,
-      5.1322
+      7.0587,
+      155.9622,
+      5.1254
      ],
      [
-      7.2704,
-      158.965,
-      7.1011
+      7.2724,
+      158.9548,
+      7.1
      ],
      [
-      13.0771,
-      1.6199,
-      21.0745
+      13.1125,
+      1.6065,
+      21.0289
      ],
      [
-      15.534,
-      0.5748,
-      18.0998
+      15.5577,
+      0.5603,
+      18.0463
      ],
      [
-      9.1011,
-      2.3017,
-      20.34
+      9.1471,
+      2.291,
+      20.2887
      ],
      [
-      13.1939,
-      0.917,
-      -3.5332
+      13.2134,
+      0.9051,
+      -3.5688
      ],
      [
-      13.648,
-      0.4308,
-      3.7636
+      13.6799,
+      0.4323,
+      3.7132
      ],
      [
-      16.6431,
-      1.363,
-      17.8242
+      16.6778,
+      1.3448,
+      17.8008
      ],
      [
-      10.2865,
-      0.1782,
-      15.2822
+      10.3103,
+      0.162,
+      15.2118
      ],
      [
-      -1.4134,
-      151.4429,
-      13.512
+      -1.4133,
+      151.4145,
+      13.5303
      ],
      [
-      0.5288,
-      152.8377,
-      9.4519
+      0.5285,
+      152.8031,
+      9.4617
      ],
      [
-      -2.9545,
-      158.378,
-      14.6386
+      -2.9516,
+      158.35,
+      14.6707
      ]
     ],
     "joints": {
      "root": [
       0,
-      90.6162,
-      1.907
+      90.6401,
+      1.8572
      ],
      "upperarm01.L": [
-      19.8204,
-      136.6878,
-      2.9472
+      19.8066,
+      136.455,
+      2.9248
      ],
      "lowerarm01.L": [
-      24.7021,
-      109.0024,
-      2.9472
+      24.6786,
+      108.8244,
+      2.9248
      ],
      "wrist.L": [
-      28.8692,
-      85.3696,
-      2.9472
+      28.8459,
+      85.1904,
+      2.9248
      ],
      "upperleg01.L": [
-      11.8785,
-      89.0867,
-      1.1495
+      11.9295,
+      89.0707,
+      1.0906
      ],
      "lowerleg01.L": [
-      11.8785,
-      48.2421,
-      1.1495
+      11.9295,
+      48.4556,
+      1.0906
      ],
      "foot.L": [
-      11.8785,
-      8.1616,
-      1.1495
+      11.9295,
+      8.1292,
+      1.0906
      ],
      "neck01": [
       0,
-      146.2303,
-      1.5191
+      146.0541,
+      1.5674
      ],
      "head": [
       0,
-      154.569,
-      4.9723
+      154.5351,
+      4.9816
      ]
     }
    }
