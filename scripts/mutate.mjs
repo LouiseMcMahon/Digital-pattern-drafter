@@ -8,7 +8,11 @@ import { readFileSync } from 'node:fs';
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
   pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts', 'src/core/pose.test.ts'] },
-  flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts'] },
+  mesh: { mutate: 'src/core/mesh.ts', tests: ['src/core/mesh.test.ts'] },
+  ease: { mutate: 'src/core/ease.ts', tests: ['src/core/ease.test.ts'] },
+  lscm: { mutate: 'src/core/lscm.ts', tests: ['src/core/lscm.test.ts'] },
+  flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts', 'src/core/lscm.test.ts'] },
+  body: { mutate: 'src/core/body.ts', tests: ['src/core/body.test.ts'] },
   // pose.test.ts covers the default-pose path through evaluate() on the real body.
   bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts', 'src/core/pose.test.ts'] },
 };

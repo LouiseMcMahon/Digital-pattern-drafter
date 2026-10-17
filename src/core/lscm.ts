@@ -59,10 +59,8 @@ export function lscm(mesh: Mesh): Float64Array {
   const D = len(sub(pos(pa), pos(pb)));
   const x = new Float64Array(2 * n);
   const pinned = new Uint8Array(2 * n);
-  for (const [i, ux, uy] of [[pa, 0, 0], [pb, D, 0]] as const) {
-    x[2 * i] = ux; x[2 * i + 1] = uy;
-    pinned[2 * i] = 1; pinned[2 * i + 1] = 1;
-  }
+  x[2 * pb] = D; // pa stays at the origin (x starts zeroed); both pins sit on the u axis
+  for (const i of [pa, pb]) { pinned[2 * i] = 1; pinned[2 * i + 1] = 1; }
 
   const apply = (v: Float64Array, out: Float64Array) => {
     for (let r = 0; r < nt * 2; r++) {

@@ -1,6 +1,10 @@
 {
-  "slice": 93,
-  "pose": 94,
-  "bodyModel": 93,
-  "flatten": 0
+ "slice": 93,
+ "pose": 94,
+ "bodyModel": 93,
+ "flatten": 0,
+ "mesh": 96,
+ "ease": 94,
+ "lscm": 82,
+ "body": 0
 }
