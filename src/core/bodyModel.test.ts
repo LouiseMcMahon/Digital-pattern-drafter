@@ -54,4 +54,11 @@ describe('baked body model', () => {
     // Open at most at a handful of holes (eyes/mouth interior etc.).
     expect(loops.length).toBeLessThan(10);
   });
+
+  it('the arm angle option reaches the pose: a wider angle swings the wrist further out (mutation-report survivor)', () => {
+    const wrist = (deg?: number) => body.joint(body.evaluate({}, deg === undefined ? {} : { armDegrees: deg }), 'wrist.L')[0];
+    expect(wrist(25)).toBeGreaterThan(wrist() + 5);
+    expect(wrist(0)).toBeLessThan(wrist() - 1);
+    expect(wrist(10)).toBeCloseTo(wrist(), 9); // 10 degrees is the default
+  });
 });

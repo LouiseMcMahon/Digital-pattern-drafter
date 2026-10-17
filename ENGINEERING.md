@@ -9,6 +9,7 @@ Read `REQUIREMENTS.md` first (R1 match the measurements, R2 extremes, R5 tailor 
 | Layer | Where | What it stops |
 |---|---|---|
 | Unit tests | `slice.test.ts`, `bodyModel.test.ts`, `flatten.test.ts`, `body.test.ts` | Geometry helpers (slicing, arcs, loading, flattening) giving wrong answers on shapes with known answers. |
+| **Mutation gate** | `scripts/mutate.mjs`, `mutation-thresholds.json` | **Tests that run but would not notice a change.** Stryker mutates `slice`, `pose`, `bodyModel` and `flatten` one small change at a time and re-runs their unit tests; a module whose score falls below its minimum fails. **First stage of `npm run check` and of CI.** |
 | Pose tests (R5) | `pose.test.ts` | The tailor pose changing: arm angle, vertical legs, flat feet, bone lengths, symmetry. |
 | Measurement invariants | `measure.invariants.test.ts` | A definition changing meaning: scale covariance, `armLength = upper + forearm`, `crotchDepth = waistHeight - insideLeg`, each control moving the measurement it is named for. |
 | Smoothness | `measure.smoothness.test.ts` | A measurement that jumps (a ring that switches loop, a path that goes the long way round). The fit is gradient-based and stalls on jumps. This found three real bugs. |
@@ -29,8 +30,10 @@ Every guard has been checked by breaking the thing it guards (a 0.1 cm calibrati
 | `npm run test:fast` | Quick loop while editing (skips the slow fit and golden suites). |
 | `npm test` | Everything (about 45 s). |
 | `npm run coverage` | Everything plus the coverage thresholds (about 2 min). What CI runs. |
-| `npm run check` | Typecheck, coverage, build. **Run before every commit.** |
-| `npm run mutate -- <module>` | Mutation testing (Stryker) of one module against its own unit tests: `slice`, `pose`, `flatten`, `bodyModel`, or `all`. Minutes per module; not in CI. Report: `reports/mutation/index.html`. |
+| `npm run check` | **Mutation gate**, then typecheck, coverage, build. The full gate: run it before merging (about 30 minutes: the mutation stage is most of it). |
+| `npm run check:fast` | Typecheck, coverage, build, without mutation. For the edit-test loop; CI always runs the full gate. |
+| `npm run mutate:gate` | Mutation testing of every module against its minimum score. |
+| `npm run mutate -- <module> [--gate]` | Mutation testing (Stryker) of one module against its own unit tests: `slice`, `pose`, `flatten`, `bodyModel`, or `all`. Minutes per module (slice 8, pose 10, bodyModel 24). `--gate` fails below the minimum. Report: `reports/mutation/index.html`. |
 | `npm run build && npm run e2e` | Browser smoke test. Set `CHROMIUM_PATH` to use a specific browser. |
 | `npm run fixtures:regenerate` | Regenerate `src/core/fixtures.ts` from `fixtureSeeds.ts`. |
 | `npm run golden:update` | Rewrite the golden file, keeping the stored fixture-body parameters. Prints a drift report. |
@@ -38,10 +41,14 @@ Every guard has been checked by breaking the thing it guards (a 0.1 cm calibrati
 
 ## Mutation testing
 
-Coverage says a line ran; mutation testing says a test would notice if it were wrong. Stryker changes the code one small way at a time (`<` to `<=`, `+` to `-`, a branch removed) and re-runs the tests; a mutant that no test fails on is a *survivor* and points at a missing assertion. It is a tool for finding gaps, not a gate: it is **not in CI** and has no threshold.
+Coverage says a line ran; mutation testing says a test would notice if it were wrong. Stryker changes the code one small way at a time (`<` to `<=`, `+` to `-`, a branch removed) and re-runs the tests; a mutant that no test fails on is a *survivor* and points at a missing assertion.
+
+**It is a gate, and it runs first.** `npm run check` starts with `npm run mutate:gate`, and CI's first stage is a `mutation` job per module (run in parallel); the typecheck, coverage and e2e stages wait for it. A module fails if its score is below its minimum in `mutation-thresholds.json`, or if the harness ran no tests for some mutants (see below). The minimums sit a little under what was measured: `slice` 93 (measured 94.75), `pose` 94 (95.3), `bodyModel` 93 (94.0), `flatten` 0 (no baseline yet: it reports but cannot fail). Like the coverage thresholds they only ratchet up: raise one when a module's score rises; lowering one needs the reason in the commit message and at the line.
+
+**What the scores mean.** The score is mutants killed (a failing test or a timeout) over all mutants. Some survivors are *equivalent* mutants that no test could kill (a loop bound that reads one past the end of an array, a check implied by another, a dead store), so the ceiling is below 100%: about 95% for these modules. Before writing a test for a survivor, decide whether it is equivalent; if it is, simplify the code so the mutant disappears rather than writing a test that cannot pass. Only `slice`, `pose`, `bodyModel` and `flatten` are mutated: `measure.ts` and `fit.ts` are guarded by suites that take seconds per run and would make every mutant minutes (the golden, plausibility, smoothness, stability and acceptance tests are their guard).
 
 - Run `npm run mutate -- slice` (see the table above), then open `reports/mutation/index.html` and read the survivors. A module takes minutes (every mutant is a fresh `vitest` run).
-- Each mutant re-runs the selected tests, so `scripts/mutate.mjs` maps each module to the test files that exercise it, and `vitest.mutation.config.ts` leaves out the fit, golden, smoothness and stability suites (minutes each).
+- Each mutant re-runs the selected tests, so `scripts/mutate.mjs` maps each module to the test files that exercise it, and `vitest.mutation.config.ts` leaves out the fit, golden, smoothness and stability suites (minutes each). A module's tests must be unit tests that check exact answers on small, hand-worked shapes (see `slice.test.ts`, `pose.rig.test.ts`, `bodyModel.synthetic.test.ts`): invariants with tolerances on the real body let most mutants through.
 - **Read scores with that in mind.** A module's score is against its own unit tests only: `pose.ts` is mostly guarded by the golden and measurement suites, which are excluded, so a low `pose.ts` score is a statement about its unit tests, not about the model's protection.
 - **The harness uses Stryker's `command` runner on purpose, and checks itself.** The first setup used `@stryker-mutator/vitest-runner`, and it silently ran *zero tests* for most mutants (`perTest` and `all` coverage both; the runner maps mutants to test ids that Vitest 5 does not find, and it sometimes crashed on init with a circular-JSON error). Mutants that run no tests count as "survived", so the first scores (`slice.ts` 28%, `pose.ts` 3%) were mostly the harness failing, not the tests: of 356 mutants only 137 ran any test, and 120 of those were killed (88%). Nothing in the report said so. So: (1) the config uses `testRunner: "command"` (a plain `vitest run` per mutant, in Stryker's sandbox), (2) `scripts/mutate.mjs` fails the run if the report shows mutants that completed no tests, and (3) when you see a score you do not believe, look at `testsCompleted` in `reports/mutation/mutation.json` before writing tests.
 - `stryker.config.json` has `tsconfigFile` pointing at a file that does not exist because Stryker's tsconfig rewrite needs the TypeScript JS API, which TypeScript 7 does not ship. Do not switch on `inPlace`: a killed run leaves the working tree full of instrumented files. The config file is a positional argument (`stryker run <file>`); `-c` is `--concurrency`.
@@ -84,6 +91,8 @@ Only through `tools/bake_body/bake_body.py` (see its README); never edit `public
 
 ## Known gaps (do not forget)
 
+- **`flatten.ts` has no mutation baseline** (its minimum is 0). Run `npm run mutate -- flatten`, close the real survivors, then set its minimum in `mutation-thresholds.json`.
+- **The mutation stage is slow** (about 30 minutes in total). If it becomes a brake, the options are fewer tests per module (`bodyModel` also runs `pose.test.ts` on the real body, which is most of its 24 minutes) or Stryker's incremental mode, which does not yet work with the command runner here.
 - **No real-person data yet.** Everything is checked against itself and against published ranges, not against a tape measure on a body. The first real measurement set (see PLAN.md) is the most valuable test we can add; it should become a fixture and a golden body.
 - **Some landmarks are still tracked vertices.** The shoulder point and neck point are computed from the live surface (a 1 degree pose change used to move shoulder width 1.8 cm; now 0.0). The bust apex, underarm, crotch, hip level and nape are still vertices chosen once on the mean body; `measure.stability.test.ts` bounds how much that matters (0.3 cm for small upstream changes, 1.5 cm for larger ones, where the underarm genuinely moves with the arm), but replacing them with exact surface points would remove the remaining quantisation.
 - **Goldens are checked on one platform.** Tolerances (0.005 cm) are far above floating-point noise, but a different CPU or Node version has not been tried.

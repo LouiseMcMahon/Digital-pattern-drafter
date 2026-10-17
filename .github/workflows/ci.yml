@@ -11,7 +11,7 @@ jobs:
   mutation:
     name: mutation testing (${{ matrix.module }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120 # bodyModel takes about 24 minutes on a 4-core machine; runners may be slower
     strategy:
       fail-fast: false
       matrix:

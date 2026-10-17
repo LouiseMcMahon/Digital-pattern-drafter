@@ -229,6 +229,28 @@ describe('BodyModel from a synthetic manifest', () => {
     });
   });
 
+  describe('dominantBone with other weights (survivors from the mutation report)', () => {
+    const withWeights = (idx: number[], w: number[]) => {
+      const m2 = { ...manifest, blocks: { ...manifest.blocks } };
+      const b2 = bin.slice(0);
+      new Uint8Array(b2, m2.blocks.skinIdx.offset, m2.blocks.skinIdx.bytes).set(idx);
+      new Uint8Array(b2, m2.blocks.skinW.offset, m2.blocks.skinW.bytes).set(w);
+      return new BodyModel(m2, b2);
+    };
+    it('picks the second influence when it is the stronger one, for any vertex', () => {
+      const m = withWeights([0, 1, 0, 1, 0, 1], [10, 245, 10, 245, 10, 245]);
+      expect(m.dominantBone(0)).toBe(1);
+      expect(m.dominantBone(1)).toBe(1);
+      expect(m.dominantBone(2)).toBe(1);
+      expect(m.weightOfBones(1, (b) => b === 1)).toBeCloseTo(245 / 255, 9);
+    });
+    it('a vertex whose strongest weight is only 1 still reports that bone (not the default)', () => {
+      const m = withWeights([1, 0, 1, 0, 1, 0], [1, 0, 1, 0, 1, 0]);
+      expect(m.dominantBone(0)).toBe(1);
+      expect(m.dominantBone(2)).toBe(1);
+    });
+  });
+
   describe('construction', () => {
     it('works on a block that does not start on a 4-byte boundary (blocks are copied before use)', () => {
       // faces (uint16) sit after float blocks; shift everything by one byte and the model must still read it.
