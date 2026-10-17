@@ -43,6 +43,14 @@ describe('R1/R2: fitted body reproduces the entered measurements', () => {
     expect(r.unmet.map((u) => u.name).sort()).toEqual(off);
   }, 120_000);
 
+  it('writes plausibility warnings as clean percentages (no floating-point noise)', () => {
+    const r = fitBody(body, measurer, { height: 188, waistHeight: 140, napeToWaist: 30 }, { preset: 'female', maxIterations: 1 });
+    const w = r.warnings.join(' | ');
+    expect(w).toMatch(/typical 56-68%/);
+    expect(w).toMatch(/typical 20-29%/);
+    expect(w).not.toMatch(/\d\.\d{4,}/);
+  }, 120_000);
+
   it('warns when measurements that are tied by definition disagree', () => {
     const r = fitBody(body, measurer, { height: 188, armLength: 64, upperArmLength: 35, forearmLength: 27, waistHeight: 115, insideLeg: 88, crotchDepth: 30 }, { preset: 'female', maxIterations: 3 });
     const w = r.warnings.join(' | ');

@@ -18,6 +18,16 @@ const scaled = (s: BodyShape, k: number): BodyShape => ({ positions: s.positions
 const SCALE_COVARIANT: MeasurementName[] = MEASUREMENT_NAMES.filter((n) => !['thigh', 'highBust', 'armscyeDepth'].includes(n));
 
 describe('measurement definitions', () => {
+  it('never throw when a section is missing: they return NaN, which the fit counts as a miss', () => {
+    // Move the body 500 cm sideways so the centre-line plane (x = 0) crosses nothing.
+    const s = body.evaluate(goldenParams('presetFemale'));
+    const away: BodyShape = { positions: s.positions.map((v, i) => (i % 3 === 0 ? v + 500 : v)), joints: s.joints.map((v, i) => (i % 3 === 0 ? v + 500 : v)) };
+    expect(() => measurer.measure(away, ['napeToWaist', 'crotchLength'])).not.toThrow();
+    const m = measurer.measure(away, ['napeToWaist', 'crotchLength']);
+    expect(Number.isNaN(m.napeToWaist)).toBe(true);
+    expect(Number.isNaN(m.crotchLength)).toBe(true);
+  });
+
   it('are deterministic', () => {
     const s = body.evaluate(goldenParams('tall188Average'));
     expect(measurer.measure(s)).toEqual(measurer.measure(s));

@@ -15,14 +15,19 @@ export interface EaseKnot {
 
 export interface EaseField {
   knots: EaseKnot[];
+  /** Set when `knots` is already sorted by height, so lookups can skip copying and sorting. */
+  sorted?: boolean;
 }
+
+/** A copy of the field with its knots sorted once, for use in hot loops. */
+export const sortedField = (field: EaseField): EaseField => ({ knots: [...field.knots].sort((a, b) => a.y - b.y), sorted: true });
 
 export const uniformEase = (horizontal: number, vertical: number): EaseField => ({
   knots: [{ y: 0, horizontal, vertical }],
 });
 
-function lerpKnots(knots: EaseKnot[], y: number, prop: 'horizontal' | 'vertical'): number {
-  const ks = [...knots].sort((a, b) => a.y - b.y);
+function lerpKnots(knots: EaseKnot[], y: number, prop: 'horizontal' | 'vertical', sorted = false): number {
+  const ks = sorted ? knots : [...knots].sort((a, b) => a.y - b.y);
   if (ks.length === 0) return 0;
   if (y <= ks[0].y) return ks[0][prop];
   if (y >= ks[ks.length - 1].y) return ks[ks.length - 1][prop];
@@ -36,7 +41,7 @@ function lerpKnots(knots: EaseKnot[], y: number, prop: 'horizontal' | 'vertical'
 /** Scale factors at height y. */
 export function scalesAt(field: EaseField, y: number) {
   return {
-    horizontal: 1 + lerpKnots(field.knots, y, 'horizontal') / 100,
-    vertical: 1 + lerpKnots(field.knots, y, 'vertical') / 100,
+    horizontal: 1 + lerpKnots(field.knots, y, 'horizontal', field.sorted) / 100,
+    vertical: 1 + lerpKnots(field.knots, y, 'vertical', field.sorted) / 100,
   };
 }

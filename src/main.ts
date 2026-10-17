@@ -23,9 +23,13 @@ controls.innerHTML = `
   <div id="status">Loading body model…</div>`;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
+// Nothing can be used before the body model has loaded: the handlers below all need it.
+const setControlsEnabled = (on: boolean) => controls.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach((el) => { el.disabled = !on; });
+setControlsEnabled(false);
 
 // 3D view
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// preserveDrawingBuffer so the smoke test (and a user's screenshot) can read back what was drawn.
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 threeEl.append(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xf4f4f4);
@@ -77,22 +81,32 @@ let body: BodyModel;
 let measurer: Measurer;
 let current: BodyParams = {};
 
-function drawLines(shape: ReturnType<BodyModel['evaluate']>) {
-  lineGroup.clear();
-  if (!$<HTMLInputElement>('lines').checked) return;
-  for (const r of measurer.rings(shape)) {
+/** Remove an object and free its GPU resources (geometries and materials are not freed by removal). */
+function disposeTree(o: THREE.Object3D) {
+  o.traverse((c) => {
+    const m = c as THREE.Mesh;
+    m.geometry?.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    (Array.isArray(mat) ? mat : [mat]).forEach((x) => x?.dispose());
+  });
+}
+
+type Inspection = ReturnType<Measurer['inspect']>;
+
+function drawLines(info: Inspection | undefined) {
+  for (const c of [...lineGroup.children]) { lineGroup.remove(c); disposeTree(c); }
+  if (!info) return;
+  for (const r of info.rings) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(r.points), 3));
     lineGroup.add(new THREE.LineLoop(g, new THREE.LineBasicMaterial({ color: 0xd01040 })));
   }
-  const lm = measurer.landmarks(shape);
-  const dot = new THREE.SphereGeometry(0.7);
-  for (const m of lm.marks) {
-    const mesh2 = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color: m.name.startsWith('crease') ? 0x1060ff : 0x10a040 }));
-    mesh2.position.set(...m.point);
-    lineGroup.add(mesh2);
+  for (const m of info.marks) {
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.7), new THREE.MeshBasicMaterial({ color: m.name.startsWith('crease') ? 0x1060ff : 0x10a040 }));
+    dot.position.set(m.point[0], m.point[1], m.point[2]);
+    lineGroup.add(dot);
   }
-  for (const pth of lm.paths) {
+  for (const pth of info.paths) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pth.points), 3));
     lineGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xff8000 })));
@@ -103,17 +117,19 @@ $('lines').onchange = () => show(current);
 function show(params: BodyParams) {
   current = params;
   const shape = body.evaluate(params);
-  const shown = shape;
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shown.positions), 3));
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.positions), 3));
   geo.setIndex(new THREE.BufferAttribute(body.faces, 1));
   geo.computeVertexNormals();
-  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+  if (mesh) { scene.remove(mesh); disposeTree(mesh); }
   mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd9a08a }));
   scene.add(mesh);
   render();
-  drawLines(shape);
-  const m = measurer.measure(shape);
+  // One measurement pass: with the overlay on, the same pass also records what to draw.
+  const info = $<HTMLInputElement>('lines').checked ? measurer.inspect(shape) : undefined;
+  const m = info ? info.values : measurer.measure(shape);
+  drawLines(info);
+  render();
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
   return m;
 }
@@ -139,8 +155,15 @@ function showErrors(errors: Partial<Record<MeasurementName, number>>) {
   }
 }
 
+const fitFailed = (message: string) => {
+  status.innerHTML = `<span class="bad">The fit failed: ${message}. Your measurements are unchanged: adjust them and try again.</span>`;
+  $<HTMLButtonElement>('fit').disabled = false;
+};
+worker.onerror = (e) => fitFailed(e.message || 'the fitting worker crashed');
+worker.onmessageerror = () => fitFailed('the fitting worker sent an unreadable result');
 worker.onmessage = (e: MessageEvent<FitResponse>) => {
   const r = e.data;
+  if ('error' in r) return fitFailed(r.error);
   show({ z: r.z, local: r.local });
   showErrors(r.errors);
   const lines = [`Fitted in ${r.iterations} iterations; largest difference ${r.maxError.toFixed(2)} cm.`];
@@ -171,9 +194,12 @@ $<HTMLSelectElement>('fixture').onchange = (e) => {
   for (const n of MEASUREMENT_NAMES) $<HTMLInputElement>(`in-${n}`).value = fx.targets[n] !== undefined ? String(fx.targets[n]) : '';
 };
 
-loadBodyFromUrl(import.meta.env.BASE_URL + 'body').then((b) => {
-  body = b;
-  measurer = new Measurer(b);
-  show({ z: b.presets.female });
-  status.textContent = 'Ready. Pick an example or type measurements, then press Fit body.';
-});
+loadBodyFromUrl(import.meta.env.BASE_URL + 'body')
+  .then((b) => {
+    body = b;
+    measurer = new Measurer(b);
+    show({ z: b.presets.female });
+    setControlsEnabled(true);
+    status.textContent = 'Ready. Pick an example or type measurements, then press Fit body.';
+  })
+  .catch((err) => { status.innerHTML = `<span class="bad">Could not load the body model: ${err instanceof Error ? err.message : String(err)}. Reload the page to try again.</span>`; });

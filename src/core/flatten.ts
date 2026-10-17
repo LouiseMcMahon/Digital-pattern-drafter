@@ -1,6 +1,6 @@
 import { type Mesh, type Vec3, cross, dot, getVertex, len, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
 import { lscm } from './lscm';
-import { type EaseField, scalesAt } from './ease';
+import { type EaseField, scalesAt, sortedField } from './ease';
 
 export interface FlattenOptions {
   ease: EaseField;
@@ -26,7 +26,8 @@ function frame(normal: Vec3, up: Vec3): { h: Vec3; v: Vec3 } {
   return { h, v: normalize(cross(normal, h)) };
 }
 
-export function flatten(mesh: Mesh, opts: FlattenOptions): FlattenResult {
+export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
+  const opts = { ...options, ease: sortedField(options.ease) };
   const up = opts.up ?? [0, 1, 0];
   const n = vertexCount(mesh);
   const normals = vertexNormals(mesh);
@@ -106,11 +107,19 @@ export function flatten(mesh: Mesh, opts: FlattenOptions): FlattenResult {
   const incident = new Int32Array(mesh.triangles.length);
   for (let t = 0; t < triangleCount(mesh); t++) for (let k = 0; k < 3; k++) incident[tfill[mesh.triangles[3 * t + k]]++] = t;
 
+  // Signed area (x2) of triangle t with vertex vi moved to (x, y). Written without temporary arrays: it
+  // runs for every incident triangle of every backtracking step of every vertex of every iteration.
   const area2 = (t: number, vi: number, x: number, y: number) => {
-    const ids = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
-    const px = ids.map((id) => (id === vi ? x : uv[2 * id]));
-    const py = ids.map((id) => (id === vi ? y : uv[2 * id + 1]));
-    return (px[1] - px[0]) * (py[2] - py[0]) - (px[2] - px[0]) * (py[1] - py[0]);
+    const ia = mesh.triangles[3 * t];
+    const ib = mesh.triangles[3 * t + 1];
+    const ic = mesh.triangles[3 * t + 2];
+    const ax = ia === vi ? x : uv[2 * ia];
+    const ay = ia === vi ? y : uv[2 * ia + 1];
+    const bx = ib === vi ? x : uv[2 * ib];
+    const by = ib === vi ? y : uv[2 * ib + 1];
+    const cx = ic === vi ? x : uv[2 * ic];
+    const cy = ic === vi ? y : uv[2 * ic + 1];
+    return (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
   };
   const iterations = opts.iterations ?? 600;
   for (let it = 0; it < iterations; it++) {

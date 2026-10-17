@@ -50,24 +50,45 @@ try {
   const bad = filled.filter((r) => !r.ok);
   if (bad.length) fail('measurements off by more than 0.5 cm: ' + bad.map((r) => `${r.name} target ${r.target} got ${r.got} (${r.diff})`).join('; '));
 
-  // The 3D canvas actually drew a body (not a blank page).
+  // The 3D canvas actually drew a body. The renderer keeps its drawing buffer, so the canvas can be read
+  // back; a blank scene is a flat 0xf4f4f4 background and has (almost) no pixels that differ from it.
   await page.evaluate(() => window.setView('front'));
   await page.waitForTimeout(500);
-  const shot = await page.locator('#three').screenshot({ path: 'e2e-out/front.png' });
-  const nonBackground = await page.evaluate(async () => {
+  await page.locator('#three').screenshot({ path: 'e2e-out/front.png' });
+  const drawn = await page.evaluate(() => {
     const c = document.querySelector('#three canvas');
-    const w = c.width, h = c.height;
-    const ctx = document.createElement('canvas'); ctx.width = w; ctx.height = h;
-    const g = ctx.getContext('2d'); g.drawImage(c, 0, 0);
-    const d = g.getImageData(0, 0, w, h).data;
-    let n = 0;
-    for (let i = 0; i < d.length; i += 16) if (Math.abs(d[i] - 244) + Math.abs(d[i + 1] - 244) + Math.abs(d[i + 2] - 244) > 30) n++;
-    return n;
-  }).catch(() => -1);
-  if (nonBackground === 0) fail('the 3D view is blank');
+    const copy = document.createElement('canvas');
+    copy.width = c.width; copy.height = c.height;
+    const g = copy.getContext('2d');
+    g.drawImage(c, 0, 0);
+    const d = g.getImageData(0, 0, copy.width, copy.height).data;
+    let body = 0, total = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      total++;
+      if (d[i + 3] > 0 && Math.abs(d[i] - 244) + Math.abs(d[i + 1] - 244) + Math.abs(d[i + 2] - 244) > 30) body++;
+    }
+    return { body, total };
+  });
+  // A standing body fills a few percent of the frame; demand at least 1% so a blank or failed render cannot pass.
+  if (!(drawn.body > 0.01 * drawn.total)) fail(`the 3D view looks blank (${drawn.body} of ${drawn.total} pixels differ from the background)`);
   await page.screenshot({ path: 'e2e-out/page.png' });
+
+  // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,
+  // not hang on "Fitting..." with the button disabled. The page fetches the body once itself; make the
+  // worker's own fetch fail.
+  const failing = await browser.newPage();
+  let bodyFetches = 0;
+  await failing.route('**/body/body.bin', (route) => (++bodyFetches === 1 ? route.continue() : route.abort()));
+  await failing.goto(`http://localhost:${PORT}/`);
+  await failing.waitForFunction(() => document.getElementById('status')?.textContent?.startsWith('Ready'), null, { timeout: 60000 });
+  await failing.selectOption('#fixture', 'tall188Average');
+  await failing.click('#fit');
+  await failing.waitForFunction(() => document.getElementById('status')?.textContent?.includes('The fit failed'), null, { timeout: 60000 })
+    .catch(() => fail('a failed fit left the page stuck instead of reporting the error'));
+  if (await failing.$eval('#fit', (b) => b.disabled)) fail('the Fit button stayed disabled after a failed fit');
+  await failing.close();
   if (errors.length) fail('page errors: ' + errors.join(' | '));
-  console.log(`E2E OK: ${filled.length} measurements within 0.5 cm in the browser (${shot.length} byte screenshot in e2e-out/)`);
+  console.log(`E2E OK: ${filled.length} measurements within 0.5 cm in the browser, a failed fit reports and recovers; body covers ${(100 * drawn.body / drawn.total).toFixed(1)}% of the 3D view (screenshots in e2e-out/)`);
 } catch (e) {
   fail(String(e?.stack ?? e));
 } finally {

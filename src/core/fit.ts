@@ -52,12 +52,12 @@ function localPrior(label: string): number {
   return label.startsWith('measure-') ? 0.15 : 0.8;
 }
 
-/** Plausible ranges of proportions, as a fraction of height, for adult bodies. */
+/** Plausible ranges of proportions, as a percentage of height, for adult bodies. */
 const RATIO_RANGES: [MeasurementName, number, number][] = [
-  ['insideLeg', 0.38, 0.52],
-  ['waistHeight', 0.56, 0.68],
-  ['napeToWaist', 0.2, 0.29],
-  ['armLength', 0.3, 0.4],
+  ['insideLeg', 38, 52],
+  ['waistHeight', 56, 68],
+  ['napeToWaist', 20, 29],
+  ['armLength', 30, 40],
 ];
 
 /** Solve (A) x = b for symmetric positive-definite A by Cholesky. A is n*n row-major, destroyed. */
@@ -228,7 +228,9 @@ export function fitBody(body: BodyModel, measurer: Measurer, targets: FitTargets
   if (h) {
     for (const [n, lo, hi] of RATIO_RANGES) {
       const v = targets[n];
-      if (v !== undefined && (v / h < lo || v / h > hi)) warnings.push(`${n} of ${v} cm is unusual for a height of ${h} cm (${((100 * v) / h).toFixed(0)}% of height; typical ${lo * 100}-${hi * 100}%)`);
+      if (v === undefined) continue;
+      const pct = (100 * v) / h;
+      if (pct < lo || pct > hi) warnings.push(`${n} of ${v} cm is unusual for a height of ${h} cm (${pct.toFixed(0)}% of height; typical ${lo}-${hi}%)`);
     }
   }
   // Measurements tied together by definition: if all are given they must agree, or no body can match them all.

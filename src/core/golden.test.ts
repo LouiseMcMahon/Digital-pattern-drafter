@@ -73,9 +73,10 @@ describe('golden snapshots', () => {
       }
       for (const [name, p] of Object.entries(params)) {
         const shape = body.evaluate(p);
+        const measured = measurer.measure(shape);
         bodies[name] = {
           params: { z: Array.from(p.z ?? [], (v) => round(v, 9)), local: Object.fromEntries(Object.entries(p.local ?? {}).map(([k, v]) => [k, round(v, 9)])) },
-          measurements: Object.fromEntries(MEASUREMENT_NAMES.map((n) => [n, round(measurer.measure(shape)[n], 4)])) as Measurements,
+          measurements: Object.fromEntries(MEASUREMENT_NAMES.map((n) => [n, round(measured[n], 4)])) as Measurements,
           geometry: geometryOf(body, shape),
         };
       }

@@ -37,7 +37,13 @@ export const FIXTURES: Record<string, { label: string; preset: 'female' | 'male'
       const r = fitBody(body, measurer, fx.seed, { preset: fx.preset });
       if (r.unmet.length) throw new Error(`${key}: seed measurements could not be matched: ${JSON.stringify(r.unmet)}`);
       const all = measurer.measure(r.shape);
-      const vals = MEASUREMENT_NAMES.map((n) => `${n}: ${Math.round(all[n] * 2) / 2}`).join(', ');
+      const tape = (v: number) => Math.round(v * 2) / 2; // a tape reads to 0.5 cm
+      const rounded: Record<string, number> = Object.fromEntries(MEASUREMENT_NAMES.map((n) => [n, tape(all[n])]));
+      // Measurements tied together by definition are derived from their rounded parts, never rounded
+      // independently, so the identities hold exactly (independent rounding can break them by 0.75 cm).
+      rounded.armLength = rounded.upperArmLength + rounded.forearmLength;
+      rounded.crotchDepth = rounded.waistHeight - rounded.insideLeg;
+      const vals = MEASUREMENT_NAMES.map((n) => `${n}: ${rounded[n]}`).join(', ');
       out += `  ${key}: {\n    label: ${JSON.stringify(fx.label)},\n    preset: '${fx.preset}',\n    targets: { ${vals} },\n  },\n`;
     }
     out += '};\n';

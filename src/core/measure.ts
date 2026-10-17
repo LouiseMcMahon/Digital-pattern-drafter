@@ -379,6 +379,7 @@ export class Measurer {
     // Whole mesh: the shoulders belong to the arm region, and the plane passes through torso/neck only.
     const loops = slicePlane(shape.positions, this.body.faces, { point: [planeX, 0, 0], normal: [1, 0, 0] });
     const outline = loops.sort((a, b) => loopLength(b) - loopLength(a))[0];
+    if (!outline) return NaN; // no section here (extreme body): a miss for the fit, never an exception
     const p = outline.points;
     const n = p.length / 3;
     const cum = [0];
@@ -406,12 +407,21 @@ export class Measurer {
     return Math.min(d, total - d);
   }
 
-  /** Landmarks (points) and surface paths used by the measurements, for display. */
-  landmarks(shape: BodyShape): { marks: { name: string; point: Vec }[]; paths: { name: string; points: number[] }[] } {
+  /**
+   * One pass that returns the measurements together with everything needed to draw where they were taken:
+   * the rings, the landmarks and the surface paths. (Display only; fitting uses measure().)
+   */
+  inspect(shape: BodyShape): {
+    values: Measurements;
+    rings: { name: MeasurementName; points: number[] }[];
+    marks: { name: string; point: Vec }[];
+    paths: { name: string; points: number[] }[];
+  } {
+    this.record = [];
     this.marks = [];
     this.paths = [];
     try {
-      this.measure(shape);
+      const values = this.measure(shape);
       const P = (id: number) => this.v(shape, id);
       const lm = this.lm;
       const add = (name: string, id: number) => this.marks!.push({ name, point: P(id) });
@@ -421,21 +431,11 @@ export class Measurer {
       add('shoulder point L', lm.shoulderPoint[0]); add('shoulder point R', lm.shoulderPoint[1]);
       add('bust apex L', lm.bustApex[0]); add('bust apex R', lm.bustApex[1]);
       add('crotch', lm.crotch); add('hip level', lm.hip);
-      return { marks: this.marks, paths: this.paths };
-    } finally {
-      this.marks = undefined;
-      this.paths = undefined;
-    }
-  }
-
-  /** The rings (closed polylines, xyz interleaved) each ring-type measurement is taken along, for display. */
-  rings(shape: BodyShape): { name: MeasurementName; points: number[] }[] {
-    this.record = [];
-    try {
-      this.measure(shape);
-      return this.record as { name: MeasurementName; points: number[] }[];
+      return { values, rings: this.record as { name: MeasurementName; points: number[] }[], marks: this.marks, paths: this.paths };
     } finally {
       this.record = undefined;
+      this.marks = undefined;
+      this.paths = undefined;
     }
   }
 
