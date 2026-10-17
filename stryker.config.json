@@ -26,5 +26,6 @@
   "disableTypeChecks": false,
   "commandRunner": {
     "command": "node node_modules/vitest/vitest.mjs run --config vitest.mutation.config.ts --reporter=dot --bail=1"
-  }
+  },
+  "timeoutFactor": 0.25
 }

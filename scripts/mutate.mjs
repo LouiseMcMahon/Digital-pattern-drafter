@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
-  pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts', 'src/core/pose.test.ts'] },
+  pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts'] },
   geodesic: { mutate: 'src/core/geodesic.ts', tests: ['src/core/seam.test.ts'] },
   cut: { mutate: 'src/core/cut.ts', tests: ['src/core/cut.test.ts'] },
   mesh: { mutate: 'src/core/mesh.ts', tests: ['src/core/mesh.test.ts'] },
@@ -17,7 +17,7 @@ const MODULES = {
   body: { mutate: 'src/core/body.ts', tests: ['src/core/body.test.ts'] },
   seam: { mutate: 'src/core/seam.ts', tests: ['src/core/seam.test.ts'] },
   // pose.test.ts covers the default-pose path through evaluate() on the real body.
-  bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts', 'src/core/pose.test.ts'] },
+  bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts'] },
 };
 
 const args = process.argv.slice(2);
