@@ -1,3 +1,4 @@
+import { straighten } from './geodesic';
 import { type Mesh, type Vec3, cross, dot, getVertex, len, sub } from './mesh';
 
 /**
@@ -297,11 +298,23 @@ export class SurfaceGraph {
    */
   path(positions: Float64Array, a: SurfacePoint, b: SurfacePoint): number[] {
     const m: Mesh = { positions, triangles: this.triangles };
-    const out: number[] = [...pointOnSurface(m, a)];
-    for (const n of this.route(positions, a, b)) out.push(...this.position(positions, n));
-    out.push(...pointOnSurface(m, b));
+    const out: number[] = [];
+    for (const n of this.pathNodes(positions, a, b)) out.push(...this.nodePosition(m, n));
     return out;
   }
+
+  private nodePosition(m: Mesh, n: PathNode): Vec3 {
+    if (n.kind === 'face') return pointOnSurface(m, n.point);
+    if (n.kind === 'vertex') return getVertex(m, n.vertex);
+    const [pa, pb] = [getVertex(m, n.a), getVertex(m, n.b)];
+    return [0, 1, 2].map((k) => pa[k] + n.t * (pb[k] - pa[k])) as Vec3;
+  }
+
+  /** The triangles that have the edge (a, b), or the vertex v. */
+  edgeTriangles(a: number, b: number): number[] {
+    return this.vertexTris[a].filter((t) => this.vertexTris[b].includes(t));
+  }
+  vertexTriangles(v: number): number[] { return this.vertexTris[v]; }
 
   /**
    * The same path as `path`, as places on the mesh: the start, then each mesh vertex or point on a mesh edge it
@@ -315,7 +328,7 @@ export class SurfaceGraph {
       const e = Math.floor(rel / this.steiner);
       return { kind: 'edge', a: this.edgeVerts[2 * e], b: this.edgeVerts[2 * e + 1], t: ((rel % this.steiner) + 1) / (this.steiner + 1) };
     });
-    return [{ kind: 'face', point: a }, ...mid, { kind: 'face', point: b }];
+    return straighten(positions, this.triangles, [{ kind: 'face', point: a }, ...mid, { kind: 'face', point: b }], this);
   }
 
   /** The polyline of a whole seam: the shortest path between each consecutive pair of control points. */

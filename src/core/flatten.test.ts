@@ -117,3 +117,88 @@ describe('flatten on a flat wall', () => {
     expect(rowWidth(r.uv, 0, 6)).toBeCloseTo(5.5, 3);
   });
 });
+
+describe('flatten of a doubly curved patch (a square cut from a sphere)', () => {
+  /** (2n + 1)^2 vertices on a sphere of radius R, x and y in [-half, half], cut into triangles one way or the other. */
+  function cap(n: number, half: number, R: number, diagonal: 'same' | 'mirrored' | 'other'): Mesh {
+    const positions: number[] = [];
+    for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
+      const x = (i * half) / n;
+      const y = (j * half) / n;
+      positions.push(x, y, Math.sqrt(R * R - x * x - y * y));
+    }
+    const id = (i: number, j: number) => (j + n) * (2 * n + 1) + (i + n);
+    const tris: number[] = [];
+    for (let j = -n; j < n; j++) for (let i = -n; i < n; i++) {
+      const flip = diagonal === 'same' ? false : diagonal === 'other' ? true : i >= 0;
+      if (!flip) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+      else tris.push(id(i, j), id(i + 1, j), id(i, j + 1), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1));
+    }
+    return { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+  }
+  /** The boundary of a grid patch, as flat points, in order. */
+  const outline = (m: Mesh, uv: Float64Array, n: number) => {
+    const id = (i: number, j: number) => (j + n) * (2 * n + 1) + (i + n);
+    const ring: number[] = [];
+    for (let i = -n; i < n; i++) ring.push(id(i, -n));
+    for (let j = -n; j < n; j++) ring.push(id(n, j));
+    for (let i = n; i > -n; i--) ring.push(id(i, n));
+    for (let j = n; j > -n; j--) ring.push(id(-n, j));
+    return ring.map((v) => [uv[2 * v], uv[2 * v + 1]] as [number, number]);
+  };
+  const distToPolygon = (p: [number, number], poly: [number, number][]) => {
+    let best = Infinity;
+    for (let i = 0; i < poly.length; i++) {
+      const [a, b] = [poly[i], poly[(i + 1) % poly.length]];
+      const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+      const l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+      best = Math.min(best, Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]));
+    }
+    return best;
+  };
+  const n = 8;
+
+  it('keeps edge lengths to within a few percent, flip-free', () => {
+    const m = cap(n, 12, 30, 'same');
+    const r = flatten(m, { ease: uniformEase(0, 0) });
+    expect(r.flippedTriangles).toBe(0);
+    expect(r.rmsEdgeError).toBeLessThan(0.03);
+  });
+  it('gives (nearly) the same panel however the mesh is cut into triangles', () => {
+    const a = flatten(cap(n, 12, 30, 'same'), { ease: uniformEase(0, 0) });
+    const b = flatten(cap(n, 12, 30, 'other'), { ease: uniformEase(0, 0) });
+    const [oa, ob] = [outline(cap(n, 12, 30, 'same'), a.uv, n), outline(cap(n, 12, 30, 'other'), b.uv, n)];
+    // The two layouts differ by a rigid motion: compare after moving the centres together and aligning the first edge.
+    const centre = (o: [number, number][]) => [o.reduce((s, p) => s + p[0], 0) / o.length, o.reduce((s, p) => s + p[1], 0) / o.length];
+    const [ca, cb] = [centre(oa), centre(ob)];
+    const angle = (o: [number, number][], c: number[]) => Math.atan2(o[0][1] - c[1], o[0][0] - c[0]);
+    const turn = angle(oa, ca) - angle(ob, cb);
+    const placed = ob.map(([x, y]) => {
+      const [dx, dy] = [x - cb[0], y - cb[1]];
+      return [ca[0] + Math.cos(turn) * dx - Math.sin(turn) * dy, ca[1] + Math.sin(turn) * dx + Math.cos(turn) * dy] as [number, number];
+    });
+    const worst = Math.max(...placed.map((p) => distToPolygon(p, oa)));
+    expect(worst).toBeLessThan(0.02 * 24); // 2% of the patch width
+  });
+  it('a mirror-symmetric patch flattens to a mirror-symmetric outline, even on a lopsided mesh', () => {
+    const m = cap(n, 12, 30, 'same');
+    const r = flatten(m, { ease: uniformEase(0, 0) });
+    const o = outline(m, r.uv, n);
+    const xs = o.map((p) => p[0]);
+    const ys = o.map((p) => p[1]);
+    // The axis of symmetry is the line through the middle of the top and bottom edges: use the outline's own centre line after aligning "up" with y.
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const mirrored = o.map(([x, y]) => [2 * cx - x, y] as [number, number]);
+    const worst = Math.max(...o.map((p) => distToPolygon(p, mirrored)));
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
+    expect(worst).toBeLessThan(0.02 * 24);
+  });
+  it('stays accurate with a very short edge in the mesh (the error is length-weighted)', () => {
+    const m = wall(6, 5);
+    m.positions[3 * 8] += 0.97; // vertex 8 (2, 1) almost on top of vertex 9 (3, 1): one edge of 0.03 cm
+    const r = flatten(m, { ease: uniformEase(0, 0) });
+    expect(r.rmsEdgeError).toBeLessThan(0.02);
+    expect(r.flippedTriangles).toBe(0);
+  });
+});

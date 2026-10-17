@@ -487,3 +487,70 @@ describe('closestSurfacePoint on several triangles', () => {
     expect(c.distance).toBeCloseTo(0.5, 12);
   });
 });
+
+describe('SurfaceGraph.path is a straight line over the surface', () => {
+  const pathLength = (m: Mesh, a: SurfacePoint, b: SurfacePoint) => polylineLength(graphOf(m).path(m.positions, a, b));
+  const at = (m: Mesh, x: number, y: number) => raycast(m, [x, y, 5], [0, 0, -1])!;
+
+  it('on a flat grid it has exactly the straight-line length, in any direction', () => {
+    const m = grid(8, 8);
+    for (const [x0, y0, x1, y1] of [[0.3, 0.4, 7.6, 6.9], [7.5, 0.6, 0.4, 7.4], [0.5, 4.2, 7.7, 4.9], [3.3, 0.2, 4.1, 7.9], [1.1, 1.3, 6.3, 1.3]]) {
+      expect(pathLength(m, at(m, x0, y0), at(m, x1, y1))).toBeCloseTo(Math.hypot(x1 - x0, y1 - y0), 9);
+    }
+  });
+  it('is the same for the mirror image of a point pair on a mirror-symmetric mesh', () => {
+    // A grid whose diagonals mirror each other about x = 4 (the left half cut one way, the right half the other).
+    const n = 8;
+    const positions: number[] = [];
+    for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) positions.push(i, j, 0);
+    const id = (i: number, j: number) => j * (n + 1) + i;
+    const tris: number[] = [];
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      if (i < n / 2) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+      else tris.push(id(i, j), id(i + 1, j), id(i, j + 1), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1));
+    }
+    const m: Mesh = { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+    const left = pathLength(m, at(m, 0.7, 0.6), at(m, 3.4, 7.3));
+    const right = pathLength(m, at(m, 8 - 0.7, 0.6), at(m, 8 - 3.4, 7.3));
+    expect(left).toBeCloseTo(right, 9);
+    expect(left).toBeCloseTo(Math.hypot(2.7, 6.7), 9);
+  });
+  it('on a faceted tube it is the straight line of the unrolled surface', () => {
+    const around = 24;
+    const r = 5;
+    const m = tube(around, 8, r, 16); // 2 cm bands, chord 2 r sin(pi / 24)
+    const chord = 2 * r * Math.sin(Math.PI / around);
+    // Points at the middle of a facet: take the barycentre of a triangle pair and measure over the unrolled strip.
+    const a: SurfacePoint = { tri: 2 * (2 * around + 3), bary: [0.2, 0.3, 0.5] }; // band 2, facet 3
+    const b: SurfacePoint = { tri: 2 * (6 * around + 9), bary: [0.4, 0.4, 0.2] }; // band 6, facet 9
+    const [pa, pb] = [pointOnSurface(m, a), pointOnSurface(m, b)];
+    // Unrolled coordinates: x = distance along the polygon, y = height.
+    const unroll = (p: Vec3, tri: number) => {
+      const facet = (tri / 2) % around;
+      const x0 = facet * chord;
+      const c0 = m.positions.slice(3 * facet, 3 * facet + 3); // bottom-left corner of this facet column, band 0
+      const c1 = m.positions.slice(3 * ((facet + 1) % around), 3 * ((facet + 1) % around) + 3);
+      const along = Math.hypot(p[0] - c0[0], p[2] - c0[2]) / Math.hypot(c1[0] - c0[0], c1[2] - c0[2]);
+      return [x0 + along * chord, p[1]];
+    };
+    const [ua, ub] = [unroll(pa, a.tri), unroll(pb, b.tri)];
+    expect(pathLength(m, a, b)).toBeCloseTo(Math.hypot(ub[0] - ua[0], ub[1] - ua[1]), 8);
+  });
+  it('is never shorter than the straight line through space', () => {
+    const m = tube(24, 8, 5, 16);
+    const a: SurfacePoint = { tri: 7, bary: [0.3, 0.3, 0.4] };
+    const b: SurfacePoint = { tri: 2 * (5 * 24 + 15) + 1, bary: [0.3, 0.3, 0.4] };
+    const [pa, pb] = [pointOnSurface(m, a), pointOnSurface(m, b)];
+    expect(pathLength(m, a, b)).toBeGreaterThanOrEqual(Math.hypot(pa[0] - pb[0], pa[1] - pb[1], pa[2] - pb[2]) - 1e-9);
+  });
+  it('pathNodes lists the start, the crossings in order, and the end', () => {
+    const m = grid(4, 4);
+    const nodes = graphOf(m).pathNodes(m.positions, at(m, 0.3, 0.4), at(m, 3.6, 3.1));
+    expect(nodes[0].kind).toBe('face');
+    expect(nodes[nodes.length - 1].kind).toBe('face');
+    expect(nodes.length).toBeGreaterThan(4);
+    for (const n of nodes.slice(1, -1)) {
+      if (n.kind === 'edge') { expect(n.a).toBeLessThan(n.b); expect(n.t).toBeGreaterThanOrEqual(0); expect(n.t).toBeLessThanOrEqual(1); }
+    }
+  });
+});

@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
   pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts', 'src/core/pose.test.ts'] },
+  geodesic: { mutate: 'src/core/geodesic.ts', tests: ['src/core/seam.test.ts'] },
   cut: { mutate: 'src/core/cut.ts', tests: ['src/core/cut.test.ts'] },
   mesh: { mutate: 'src/core/mesh.ts', tests: ['src/core/mesh.test.ts'] },
   ease: { mutate: 'src/core/ease.ts', tests: ['src/core/ease.test.ts'] },

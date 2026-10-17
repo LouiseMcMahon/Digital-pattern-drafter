@@ -7,7 +7,7 @@ import type { FitTargets } from './core/fit';
 import { flatten } from './core/flatten';
 import { boundaryLoops, extractSubmesh } from './core/mesh';
 import { FIXTURES } from './core/fixtures';
-import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
+import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
 
@@ -197,6 +197,7 @@ const redrawSeams = () => { drawSeams(); render(); if (panels.length) refreshPan
 interface Panel { seed: SurfacePoint; horizontal: number; vertical: number }
 let panels: Panel[] = [];
 let pickingPanel = false;
+let outlines: [number, number][][] = []; // the flat outline of each panel, for tests
 const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
 const MAX_PANEL_SHARE = 0.6; // a region bigger than this share of the body is not enclosed by the seams
 
@@ -221,6 +222,7 @@ function refreshPanels() {
   const rows: string[] = [];
   if (panels.length === 0) { $('panels').innerHTML = '<span style="color:#555">No panels yet.</span>'; svg.style.display = 'none'; render(); return; }
   const shapes: string[] = [];
+  outlines = [];
   let x = 0;
   let top = 0;
   derivePanels().forEach((d, i) => {
@@ -236,6 +238,7 @@ function refreshPanels() {
     const xs = d.loop.map((v) => flat.uv[2 * v]);
     const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    outlines.push(d.loop.map((v) => [flat.uv[2 * v], flat.uv[2 * v + 1]] as [number, number]));
     shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map((v) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`).join('L')}Z"/>`);
     x += x1 - x0 + 4;
     top = Math.max(top, y1 - y0);
@@ -406,6 +409,22 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const v = new THREE.Vector3(...p).project(camera);
   const rect = renderer.domElement.getBoundingClientRect();
   return { x: rect.left + ((v.x + 1) / 2) * rect.width, y: rect.top + ((1 - v.y) / 2) * rect.height };
+};
+(window as unknown as Record<string, unknown>).landmarkPoints = () => landmarks.map((l) => ({ name: l.name, point: l.point }));
+(window as unknown as Record<string, unknown>).seamFromPoints = (points: [number, number, number][], closed: boolean) => {
+  // A point with z = 999 is "the front of the body at this x and y".
+  const place = (p: [number, number, number]): SurfacePoint => {
+    const hit = p[2] === 999 ? raycast(bodyMesh(), [p[0], p[1], 300], [0, 0, -1]) : undefined;
+    return hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), p);
+  };
+  seams.push({ points: points.map(place), closed });
+  redrawSeams();
+};
+(window as unknown as Record<string, unknown>).panelAt = (point: [number, number, number], horizontal = 0, vertical = 0) => {
+  const hit = point[2] === 999 ? raycast(bodyMesh(), [point[0], point[1], 300], [0, 0, -1]) : undefined;
+  panels.push({ seed: hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), point), horizontal, vertical });
+  refreshPanels();
+  return outlines[outlines.length - 1];
 };
 (window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
 $('seam-undo').onclick = () => {

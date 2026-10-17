@@ -11,7 +11,7 @@ export interface FlattenOptions {
 export interface FlattenResult {
   /** xy-interleaved 2D positions (cm). */
   uv: Float64Array;
-  /** RMS error of flat edge lengths vs eased 3D targets, relative. */
+  /** Root-mean-square error of flat edge lengths against the eased 3D lengths, as a fraction of those lengths (length-weighted). */
   rmsEdgeError: number;
   flippedTriangles: number;
 }
@@ -87,79 +87,123 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     uv[2 * i + 1] *= (base / cur) * sv;
   }
 
-  // Per-vertex Gauss-Seidel stress minimisation (edge-length targets). Each vertex moves
-  // toward the average of the positions its neighbours ask for, but a move is backtracked
-  // if it would flip an incident triangle, so a flip-free start stays flip-free.
-  const nbrStart = new Int32Array(n + 1);
-  for (let k = 0; k < ea.length; k++) { nbrStart[ea[k] + 1]++; nbrStart[eb[k] + 1]++; }
-  for (let i = 0; i < n; i++) nbrStart[i + 1] += nbrStart[i];
-  const fill = nbrStart.slice(0, n);
-  const nbr = new Int32Array(2 * ea.length);
-  const nbrT = new Float64Array(2 * ea.length);
-  for (let k = 0; k < ea.length; k++) {
-    nbr[fill[ea[k]]] = eb[k]; nbrT[fill[ea[k]]++] = target[k];
-    nbr[fill[eb[k]]] = ea[k]; nbrT[fill[eb[k]]++] = target[k];
-  }
-  const triStart = new Int32Array(n + 1);
-  for (let k = 0; k < mesh.triangles.length; k++) triStart[mesh.triangles[k] + 1]++;
-  for (let i = 0; i < n; i++) triStart[i + 1] += triStart[i];
-  const tfill = triStart.slice(0, n);
-  const incident = new Int32Array(mesh.triangles.length);
-  for (let t = 0; t < triangleCount(mesh); t++) for (let k = 0; k < 3; k++) incident[tfill[mesh.triangles[3 * t + k]]++] = t;
-
-  // Signed area (x2) of triangle t with vertex vi moved to (x, y). Written without temporary arrays: it
-  // runs for every incident triangle of every backtracking step of every vertex of every iteration.
-  const area2 = (t: number, vi: number, x: number, y: number) => {
-    const ia = mesh.triangles[3 * t];
-    const ib = mesh.triangles[3 * t + 1];
-    const ic = mesh.triangles[3 * t + 2];
-    const ax = ia === vi ? x : uv[2 * ia];
-    const ay = ia === vi ? y : uv[2 * ia + 1];
-    const bx = ib === vi ? x : uv[2 * ib];
-    const by = ib === vi ? y : uv[2 * ib + 1];
-    const cx = ic === vi ? x : uv[2 * ic];
-    const cy = ic === vi ? y : uv[2 * ic + 1];
-    return (bx - ax) * (cy - ay) - (cx - ax) * (by - ay);
-  };
-  const iterations = opts.iterations ?? 600;
-  for (let it = 0; it < iterations; it++) {
-    for (let i = 0; i < n; i++) {
-      const deg = nbrStart[i + 1] - nbrStart[i];
-      if (deg === 0) continue;
-      let dx = 0;
-      let dy = 0;
-      const [xi, yi] = [uv[2 * i], uv[2 * i + 1]];
-      for (let q = nbrStart[i]; q < nbrStart[i + 1]; q++) {
-        const j = nbr[q];
-        const ex = xi - uv[2 * j];
-        const ey = yi - uv[2 * j + 1];
-        const d = Math.hypot(ex, ey) || 1e-12;
-        dx += uv[2 * j] + (nbrT[q] * ex) / d;
-        dy += uv[2 * j + 1] + (nbrT[q] * ey) / d;
-      }
-      dx = dx / deg - xi;
-      dy = dy / deg - yi;
-      for (let alpha = 1; alpha > 0.1; alpha *= 0.5) {
-        const [nx, ny] = [xi + alpha * dx, yi + alpha * dy];
-        let ok = true;
-        for (let q = triStart[i]; q < triStart[i + 1] && ok; q++) {
-          const t = incident[q];
-          // Don't reject moves in triangles that were already flipped, only new flips.
-          if (area2(t, i, nx, ny) <= 1e-9 && area2(t, i, xi, yi) > 0) ok = false;
-        }
-        if (ok) { uv[2 * i] = nx; uv[2 * i + 1] = ny; break; }
-      }
+  // As-rigid-as-possible refinement (Liu et al. 2008, "local-global"). Each triangle has a target shape in the plane,
+  // built from its eased edge lengths. Alternate: (local) turn each target shape to best fit the current layout;
+  // (global) move every vertex so the layout fits all those turned shapes in the least-squares sense, which is one
+  // sparse symmetric solve. The result depends only on the surface and the ease, not on how the mesh happens to
+  // be cut into triangles or which vertex comes first, so mirrored surfaces flatten to mirrored panels.
+  const edgeTarget = new Map<number, number>();
+  for (let k = 0; k < ea.length; k++) edgeTarget.set(ea[k] < eb[k] ? ea[k] * n + eb[k] : eb[k] * n + ea[k], target[k]);
+  const lengthOf = (a: number, b: number) => edgeTarget.get(a < b ? a * n + b : b * n + a)!;
+  const nt = triangleCount(mesh);
+  const rest = new Float64Array(nt * 6); // target 2D shape of each triangle: x0 y0 x1 y1 x2 y2
+  const cot = new Float64Array(nt * 3); // weight of edge (1,2), (2,0), (0,1): the cotangent of the opposite angle
+  for (let t = 0; t < nt; t++) {
+    const [i, j, k] = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
+    const [a, b, c] = [lengthOf(i, j), lengthOf(i, k), lengthOf(j, k)]; // |ij|, |ik|, |jk|
+    const x = (a * a + b * b - c * c) / (2 * a);
+    const y = Math.sqrt(Math.max(b * b - x * x, (1e-4 * a) ** 2)); // a triangle that cannot close is flattened to a sliver, not NaN
+    rest.set([0, 0, a, 0, x, y], 6 * t);
+    const p = [[0, 0], [a, 0], [x, y]];
+    for (let q = 0; q < 3; q++) {
+      const o = p[q];
+      const u = p[(q + 1) % 3];
+      const v = p[(q + 2) % 3];
+      const du: [number, number] = [u[0] - o[0], u[1] - o[1]];
+      const dv: [number, number] = [v[0] - o[0], v[1] - o[1]];
+      cot[3 * t + ((q + 1) % 3)] = Math.max(1e-3, (du[0] * dv[0] + du[1] * dv[1]) / Math.abs(du[0] * dv[1] - du[1] * dv[0])); // angle at o weights the edge opposite it
     }
   }
+  const tri = mesh.triangles;
+  const applyL = (v: Float64Array, out: Float64Array) => {
+    out.fill(0);
+    for (let t = 0; t < nt; t++) {
+      for (let q = 0; q < 3; q++) {
+        const [a, b] = [tri[3 * t + ((q + 1) % 3)], tri[3 * t + ((q + 2) % 3)]];
+        const f = cot[3 * t + ((q + 1) % 3)] * (v[a] - v[b]);
+        out[a] += f;
+        out[b] -= f;
+      }
+    }
+  };
+  const iterations = opts.iterations ?? 40;
+  const settled = 2e-3; // stop when no vertex moves more than this (cm, 0.02 mm) in a step
+  const X = new Float64Array(n);
+  const Y = new Float64Array(n);
+  const bx = new Float64Array(n);
+  const by = new Float64Array(n);
+  const solve = (x: Float64Array, rhs: Float64Array) => {
+    const r = new Float64Array(n);
+    const p = new Float64Array(n);
+    const Ap = new Float64Array(n);
+    applyL(x, Ap);
+    for (let i = 0; i < n; i++) { r[i] = rhs[i] - Ap[i]; p[i] = r[i]; }
+    let rs = r.reduce((s2, v) => s2 + v * v, 0);
+    const stop = 1e-10 * (rhs.reduce((s2, v) => s2 + v * v, 0) + 1e-30);
+    for (let it = 0; it < 100 && rs > stop; it++) {
+      applyL(p, Ap);
+      const pAp = p.reduce((s2, v, i) => s2 + v * Ap[i], 0);
+      if (!(pAp > 0)) break;
+      const alpha = rs / pAp;
+      let rsNew = 0;
+      for (let i = 0; i < n; i++) { x[i] += alpha * p[i]; r[i] -= alpha * Ap[i]; rsNew += r[i] * r[i]; }
+      for (let i = 0; i < n; i++) p[i] = r[i] + (rsNew / rs) * p[i];
+      rs = rsNew;
+    }
+  };
+  for (let i = 0; i < n; i++) { X[i] = uv[2 * i]; Y[i] = uv[2 * i + 1]; }
+  for (let it = 0; it < iterations; it++) {
+    bx.fill(0);
+    by.fill(0);
+    for (let t = 0; t < nt; t++) {
+      const id = [tri[3 * t], tri[3 * t + 1], tri[3 * t + 2]];
+      // Local step: the rotation that best maps the target shape's edges onto the current edges.
+      let s00 = 0, s01 = 0, s10 = 0, s11 = 0;
+      for (let q = 0; q < 3; q++) {
+        const [a, b] = [(q + 1) % 3, (q + 2) % 3];
+        const w = cot[3 * t + a];
+        const [rx, ry] = [rest[6 * t + 2 * a] - rest[6 * t + 2 * b], rest[6 * t + 2 * a + 1] - rest[6 * t + 2 * b + 1]];
+        const [cx, cy] = [X[id[a]] - X[id[b]], Y[id[a]] - Y[id[b]]];
+        s00 += w * rx * cx; s01 += w * ry * cx; s10 += w * rx * cy; s11 += w * ry * cy;
+      }
+      const ang = Math.atan2(s10 - s01, s00 + s11);
+      const [co, si] = [Math.cos(ang), Math.sin(ang)];
+      for (let q = 0; q < 3; q++) {
+        const [a, b] = [(q + 1) % 3, (q + 2) % 3];
+        const w = cot[3 * t + a];
+        const [rx, ry] = [rest[6 * t + 2 * a] - rest[6 * t + 2 * b], rest[6 * t + 2 * a + 1] - rest[6 * t + 2 * b + 1]];
+        const [vx, vy] = [w * (co * rx - si * ry), w * (si * rx + co * ry)];
+        bx[id[a]] += vx; by[id[a]] += vy;
+        bx[id[b]] -= vx; by[id[b]] -= vy;
+      }
+    }
+    // Global step. The system fixes the layout only up to a shift, so keep the centre where it was.
+    const before = { x: Float64Array.from(X), y: Float64Array.from(Y) };
+    const [mx, my] = [X.reduce((s2, v) => s2 + v, 0) / n, Y.reduce((s2, v) => s2 + v, 0) / n];
+    solve(X, bx);
+    solve(Y, by);
+    const [nx, ny] = [X.reduce((s2, v) => s2 + v, 0) / n, Y.reduce((s2, v) => s2 + v, 0) / n];
+    let moved = 0;
+    for (let i = 0; i < n; i++) {
+      X[i] += mx - nx;
+      Y[i] += my - ny;
+      moved = Math.max(moved, Math.hypot(X[i] - before.x[i], Y[i] - before.y[i]));
+    }
+    if (moved < settled) break;
+  }
+  for (let i = 0; i < n; i++) { uv[2 * i] = X[i]; uv[2 * i + 1] = Y[i]; }
 
+  // Length-weighted, so a handful of very short edges (a seam passing close to a vertex) cannot dominate the figure.
   let se = 0;
+  let tt = 0;
   for (let k = 0; k < ea.length; k++) {
     const d = Math.hypot(uv[2 * eb[k]] - uv[2 * ea[k]], uv[2 * eb[k] + 1] - uv[2 * ea[k] + 1]);
-    se += ((d - target[k]) / target[k]) ** 2;
+    se += (d - target[k]) ** 2;
+    tt += target[k] ** 2;
   }
 
   const flipped = countFlips(mesh, uv);
-  return { uv, rmsEdgeError: Math.sqrt(se / ea.length), flippedTriangles: flipped };
+  return { uv, rmsEdgeError: Math.sqrt(se / tt), flippedTriangles: flipped };
 }
 
 /** Rotate the layout so +y follows the 3D up axis (centred on its centroid). */
