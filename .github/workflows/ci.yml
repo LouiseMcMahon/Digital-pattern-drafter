@@ -5,8 +5,35 @@ on:
   pull_request:
 
 jobs:
+  # First stage: if the tests cannot catch a change to the core geometry code, nothing after this means much.
+  # One job per module so they run in parallel; each fails if its mutation score is below the minimum in
+  # mutation-thresholds.json (ENGINEERING.md, "Mutation testing").
+  mutation:
+    name: mutation testing (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [slice, pose, bodyModel, flatten]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run mutate -- ${{ matrix.module }} --gate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report-${{ matrix.module }}
+          path: reports/mutation/
+          if-no-files-found: ignore
+
   check:
     name: typecheck, tests with coverage thresholds, build
+    needs: mutation
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
