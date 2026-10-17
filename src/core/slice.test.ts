@@ -385,6 +385,23 @@ describe('arcPositionOf: the depth (z) terms', () => {
   });
 });
 
+describe('arcPositionOf: paths that do not start at z = 0', () => {
+  // The first round of z tests all started at z = 0, which hid a sign error: (p.z - az) and (p.z + az) agree there.
+  it('projects onto a segment that starts at z = 3', () => {
+    const l: Loop = { points: [0, 0, 3, 0, 0, 13], closed: false };
+    expect(arcPositionOf(l, [0, 0, 8])).toBeCloseTo(5, 9);
+    expect(arcPositionOf(l, [0, 0, 3])).toBeCloseTo(0, 9);
+    expect(arcPositionOf(l, [0, 0, 13])).toBeCloseTo(10, 9);
+  });
+  it('picks the leg that is actually nearest when the legs start and end away from z = 0', () => {
+    // Up along z at x = 0, across, then back down along z at x = 4.
+    const l: Loop = { points: [0, 0, 2, 0, 0, 12, 4, 0, 12, 4, 0, 2], closed: false };
+    expect(arcPositionOf(l, [4, 0, 7])).toBeCloseTo(10 + 4 + 5, 9); // on the third leg
+    expect(arcPositionOf(l, [0.5, 0, 7])).toBeCloseTo(5, 9); // on the first leg
+    expect(arcPositionOf(l, [4, 0, 3])).toBeCloseTo(10 + 4 + 9, 9);
+  });
+});
+
 describe('arcPoints: choosing the way round', () => {
   const sqLoop: Loop = { points: [0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0], closed: true };
   const at = (pts: number[], i: number) => [pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]];
