@@ -73,6 +73,16 @@ try {
   if (!(drawn.body > 0.01 * drawn.total)) fail(`the 3D view looks blank (${drawn.body} of ${drawn.total} pixels differ from the background)`);
   await page.screenshot({ path: 'e2e-out/page.png' });
 
+  // Seam drawing: with the mode on, three clicks down the front of the torso make one seam with a length.
+  await page.check('#draw');
+  const box = await page.locator('#three canvas').boundingBox();
+  for (const dy of [-300, -150, -40]) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 + dy);
+  await page.locator('#three').screenshot({ path: 'e2e-out/seam.png' });
+  const seamText = await page.$eval('#seams', (e) => e.textContent);
+  const seamLen = /Seam 1 \(drawing\): 3 points, ([0-9.]+) cm/.exec(seamText);
+  if (!seamLen || !(parseFloat(seamLen[1]) > 20)) fail(`three clicks on the body did not make a seam of plausible length: "${seamText}"`);
+  await page.uncheck('#draw');
+
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,
   // not hang on "Fitting..." with the button disabled. The page fetches the body once itself; make the
   // worker's own fetch fail.

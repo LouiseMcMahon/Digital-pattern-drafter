@@ -13,6 +13,7 @@ const MODULES = {
   lscm: { mutate: 'src/core/lscm.ts', tests: ['src/core/lscm.test.ts'] },
   flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts', 'src/core/lscm.test.ts'] },
   body: { mutate: 'src/core/body.ts', tests: ['src/core/body.test.ts'] },
+  seam: { mutate: 'src/core/seam.ts', tests: ['src/core/seam.test.ts'] },
   // pose.test.ts covers the default-pose path through evaluate() on the real body.
   bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts', 'src/core/pose.test.ts'] },
 };

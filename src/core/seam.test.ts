@@ -1,0 +1,315 @@
+import { describe, expect, it } from 'vitest';
+import type { Mesh, Vec3 } from './mesh';
+import { Heap, type Seam, type SurfacePoint, SurfaceGraph, pointOnSurface, polylineLength, raycast, snapToVertex, vertexPoint } from './seam';
+
+/** n x n unit squares in z = 0 (side `size`), each cut along one diagonal. Vertex (i, j) has id j * (n + 1) + i. */
+function grid(n: number, size = 1): Mesh {
+  const positions: number[] = [];
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) positions.push((i * size) / n, (j * size) / n, 0);
+  const tris: number[] = [];
+  const id = (i: number, j: number) => j * (n + 1) + i;
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+  }
+  return { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+}
+
+/** Open tube of radius r, height h: `around` segments, `rows` bands. Vertex (i, j) has id j * around + i. */
+function tube(around: number, rows: number, r: number, h: number): Mesh {
+  const positions: number[] = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i < around; i++) positions.push(r * Math.cos((2 * Math.PI * i) / around), (h * j) / rows, r * Math.sin((2 * Math.PI * i) / around));
+  const tris: number[] = [];
+  const id = (i: number, j: number) => j * around + (i % around);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < around; i++) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+  }
+  return { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+}
+
+const graphOf = (m: Mesh, steiner?: number) => new SurfaceGraph(m.triangles, m.positions.length / 3, steiner);
+const corner = (m: Mesh, v: number) => vertexPoint(m, v);
+
+describe('pointOnSurface', () => {
+  it('interpolates the triangle corners with the barycentric weights', () => {
+    const m = grid(1, 2); // vertices (0,0) (2,0) (0,2) (2,2); triangle 0 = (0,0) (2,0) (2,2)
+    expect(pointOnSurface(m, { tri: 0, bary: [1, 0, 0] })).toEqual([0, 0, 0]);
+    expect(pointOnSurface(m, { tri: 0, bary: [0, 1, 0] })).toEqual([2, 0, 0]);
+    expect(pointOnSurface(m, { tri: 0, bary: [0, 0, 1] })).toEqual([2, 2, 0]);
+    expect(pointOnSurface(m, { tri: 0, bary: [0.5, 0.25, 0.25] })).toEqual([1, 0.5, 0]);
+    expect(pointOnSurface(m, { tri: 1, bary: [0.5, 0, 0.5] })).toEqual([0, 1, 0]);
+  });
+  it('follows the surface when the vertices move (the point is stored on the face, not in space)', () => {
+    const m = grid(2);
+    const p: SurfacePoint = { tri: 3, bary: [0.2, 0.3, 0.5] };
+    const before = pointOnSurface(m, p);
+    const moved: Mesh = { ...m, positions: m.positions.map((x, i) => (i % 3 === 2 ? 5 : x * 2)) };
+    const after = pointOnSurface(moved, p);
+    expect(after).toEqual([before[0] * 2, before[1] * 2, 5]);
+  });
+});
+
+describe('vertexPoint', () => {
+  it('is exactly at the vertex, whichever corner of the triangle it is', () => {
+    const m = grid(2);
+    for (let v = 0; v < 9; v++) expect(pointOnSurface(m, vertexPoint(m, v))).toEqual([(v % 3) / 2, Math.floor(v / 3) / 2, 0]);
+  });
+  it('refuses a vertex no triangle uses', () => {
+    expect(() => vertexPoint(grid(1), 4)).toThrow('Vertex 4 is not used');
+  });
+});
+
+describe('raycast', () => {
+  const m = grid(2);
+  it('finds the triangle and barycentric weights under a ray from above', () => {
+    const hit = raycast(m, [0.75, 0.25, 5], [0, 0, -1])!;
+    expect(hit.t).toBeCloseTo(5, 12);
+    expect(pointOnSurface(m, hit).map((x) => +x.toFixed(9))).toEqual([0.75, 0.25, 0]);
+    expect(hit.bary[0] + hit.bary[1] + hit.bary[2]).toBeCloseTo(1, 12);
+  });
+  it('hits from below too, and in the direction of the ray only', () => {
+    expect(raycast(m, [0.5, 0.25, -3], [0, 0, 1])!.t).toBeCloseTo(3, 12);
+    expect(raycast(m, [0.5, 0.25, 5], [0, 0, 1])).toBeUndefined();
+  });
+  it('misses outside the mesh and for rays parallel to it', () => {
+    expect(raycast(m, [1.5, 0.5, 5], [0, 0, -1])).toBeUndefined();
+    expect(raycast(m, [-0.5, 0.5, 5], [0, 0, -1])).toBeUndefined();
+    expect(raycast(m, [0.5, 1.5, 5], [0, 0, -1])).toBeUndefined();
+    expect(raycast(m, [0.5, 0.5, 5], [1, 0, 0])).toBeUndefined();
+  });
+  it('returns the nearest of several surfaces', () => {
+    const two: Mesh = { positions: Float64Array.from([...m.positions, ...m.positions.map((x, i) => (i % 3 === 2 ? 1 : x))]), triangles: Uint32Array.from([...m.triangles, ...m.triangles.map((v) => v + 9)]) };
+    const hit = raycast(two, [0.5, 0.25, 5], [0, 0, -1])!;
+    expect(hit.t).toBeCloseTo(4, 12);
+    expect(hit.tri).toBeGreaterThanOrEqual(8);
+  });
+  it('accepts hits on the triangle edges (weights of exactly 0 or 1)', () => {
+    const hit = raycast(m, [0, 0, 1], [0, 0, -1])!;
+    expect(pointOnSurface(m, hit).map((x) => +x.toFixed(9))).toEqual([0, 0, 0]);
+  });
+});
+
+describe('snapToVertex', () => {
+  const m = grid(2);
+  it('snaps a point within the radius to the nearest corner of its triangle', () => {
+    const near: SurfacePoint = { tri: 0, bary: [0.9, 0.1, 0] }; // 0.05 from vertex 0 (distance 0.1 * 0.5)
+    const snapped = snapToVertex(m, near, 0.1);
+    expect(pointOnSurface(m, snapped)).toEqual([0, 0, 0]);
+  });
+  it('leaves a point beyond the radius alone', () => {
+    const far: SurfacePoint = { tri: 0, bary: [0.5, 0.3, 0.2] };
+    expect(snapToVertex(m, far, 0.1)).toBe(far);
+  });
+  it('snaps when the distance is exactly the radius', () => {
+    const p: SurfacePoint = { tri: 0, bary: [0.8, 0.2, 0] }; // exactly 0.1 from vertex 0
+    expect(pointOnSurface(m, snapToVertex(m, p, 0.1))).toEqual([0, 0, 0]);
+  });
+  it('picks the nearer of two candidates', () => {
+    const p: SurfacePoint = { tri: 0, bary: [0.3, 0.7, 0] }; // between vertex 0 and vertex 1, closer to 1
+    expect(pointOnSurface(m, snapToVertex(m, p, 0.5))).toEqual([0.5, 0, 0]);
+  });
+});
+
+describe('SurfaceGraph.path on a flat grid', () => {
+  const n = 8;
+  const m = grid(n);
+  const g = graphOf(m);
+  const pos = m.positions;
+
+  it('runs from the start point to the end point', () => {
+    const a: SurfacePoint = { tri: 0, bary: [0.2, 0.5, 0.3] };
+    const b: SurfacePoint = { tri: 2 * (n * n) - 1, bary: [0.6, 0.1, 0.3] };
+    const p = g.path(pos, a, b);
+    expect(p.slice(0, 3)).toEqual(pointOnSurface(m, a));
+    expect(p.slice(-3)).toEqual(pointOnSurface(m, b));
+  });
+  it('is nearly straight across the plane and never shorter than the straight line', () => {
+    const [a, b] = [corner(m, 0), corner(m, (n + 1) * (n + 1) - 1)];
+    const L = polylineLength(g.path(pos, a, b));
+    expect(L).toBeGreaterThanOrEqual(Math.SQRT2 - 1e-9);
+    expect(L).toBeLessThan(Math.SQRT2 * 1.01);
+  });
+  it('follows a straight mesh row exactly', () => {
+    const L = polylineLength(g.path(pos, corner(m, 0), corner(m, n)));
+    expect(L).toBeCloseTo(1, 9);
+  });
+  it('is a straight segment when both points are in one triangle', () => {
+    const a: SurfacePoint = { tri: 0, bary: [0.5, 0.25, 0.25] };
+    const b: SurfacePoint = { tri: 0, bary: [0.25, 0.5, 0.25] };
+    const p = g.path(pos, a, b);
+    expect(p.length).toBe(6);
+    expect(polylineLength(p)).toBeCloseTo(0.25 * 0.125, 9); // moves 0.25 of the first edge (1/8 long)
+  });
+  it('is zero length from a point to itself', () => {
+    const a: SurfacePoint = { tri: 5, bary: [0.2, 0.3, 0.5] };
+    expect(polylineLength(g.path(pos, a, a))).toBe(0);
+  });
+  it('is the same length in both directions', () => {
+    const a: SurfacePoint = { tri: 3, bary: [0.2, 0.3, 0.5] };
+    const b: SurfacePoint = { tri: 90, bary: [0.4, 0.4, 0.2] };
+    expect(polylineLength(g.path(pos, a, b))).toBeCloseTo(polylineLength(g.path(pos, b, a)), 9);
+  });
+  it('is more accurate with more Steiner points', () => {
+    const [a, b] = [corner(m, 0), corner(m, (n + 1) * (n + 1) - 1)];
+    const lengthWith = (s: number) => polylineLength(graphOf(m, s).path(pos, a, b));
+    expect(lengthWith(0)).toBeGreaterThan(lengthWith(3));
+    expect(lengthWith(6)).toBeLessThanOrEqual(lengthWith(3) + 1e-12);
+    expect(lengthWith(0)).toBeCloseTo(Math.SQRT2, 9); // along mesh diagonals only: exact here
+  });
+});
+
+describe('SurfaceGraph.path on a tube (curved surface)', () => {
+  const around = 24;
+  const r = 10;
+  const h = 40;
+  const m = tube(around, 8, r, h);
+  const g = graphOf(m);
+  const pos = m.positions;
+  const chord = 2 * r * Math.sin(Math.PI / around);
+
+  it('goes the short way round at constant height: half the polygon perimeter', () => {
+    const L = polylineLength(g.path(pos, corner(m, 0), corner(m, around / 2)));
+    expect(L).toBeCloseTo((around / 2) * chord, 6);
+  });
+  it('goes the short way round whichever side is shorter', () => {
+    const L = polylineLength(g.path(pos, corner(m, 0), corner(m, around - 3)));
+    expect(L).toBeCloseTo(3 * chord, 6);
+  });
+  it('runs straight up a vertical line', () => {
+    const L = polylineLength(g.path(pos, corner(m, 0), corner(m, 8 * around)));
+    expect(L).toBeCloseTo(h, 6);
+  });
+  it('stays on the surface: every point of the path is at the tube radius or inside the polygon', () => {
+    const p = g.path(pos, corner(m, 0), corner(m, 8 * around + around / 2));
+    const apothem = r * Math.cos(Math.PI / around);
+    for (let i = 0; i < p.length; i += 3) {
+      const rad = Math.hypot(p[i], p[i + 2]);
+      expect(rad).toBeLessThanOrEqual(r + 1e-9);
+      expect(rad).toBeGreaterThanOrEqual(apothem - 1e-9);
+    }
+  });
+  it('a diagonal is close to the unrolled straight line (the true geodesic)', () => {
+    const L = polylineLength(g.path(pos, corner(m, 0), corner(m, 8 * around + around / 2)));
+    const unrolled = Math.hypot((around / 2) * chord, h);
+    expect(L).toBeGreaterThanOrEqual(unrolled - 1e-9);
+    expect(L).toBeLessThan(unrolled * 1.02);
+  });
+  it('does not shortcut through the open end: the path never leaves the mesh height range', () => {
+    const p = g.path(pos, corner(m, 0), corner(m, 4 * around + 5));
+    for (let i = 1; i < p.length; i += 3) {
+      expect(p[i]).toBeGreaterThanOrEqual(-1e-9);
+      expect(p[i]).toBeLessThanOrEqual(h + 1e-9);
+    }
+  });
+  it('is recomputed from the new positions when the body changes', () => {
+    const wide: Mesh = { ...m, positions: m.positions.map((x, i) => (i % 3 === 1 ? x : x * 2)) };
+    const [a, b] = [corner(m, 0), corner(m, around / 2)];
+    expect(polylineLength(g.path(wide.positions, a, b))).toBeCloseTo(2 * polylineLength(g.path(pos, a, b)), 6);
+  });
+});
+
+describe('SurfaceGraph.seamPath', () => {
+  const m = grid(4);
+  const g = graphOf(m);
+  const pts = [0, 4, 24, 20].map((v) => corner(m, v)); // the four corners of the unit square, counter-clockwise
+  it('joins the control points in order', () => {
+    const open: Seam = { points: pts, closed: false };
+    expect(polylineLength(g.seamPath(m.positions, open))).toBeCloseTo(3, 9);
+  });
+  it('a closed seam returns to its first point', () => {
+    const closed: Seam = { points: pts, closed: true };
+    const path = g.seamPath(m.positions, closed);
+    expect(polylineLength(path)).toBeCloseTo(4, 9);
+    expect(path.slice(0, 3)).toEqual(path.slice(-3));
+  });
+  it('does not repeat the point where two legs meet', () => {
+    const path = g.seamPath(m.positions, { points: pts.slice(0, 3), closed: false });
+    for (let i = 3; i < path.length; i += 3) expect(Math.hypot(path[i] - path[i - 3], path[i + 1] - path[i - 2], path[i + 2] - path[i - 1])).toBeGreaterThan(0);
+  });
+  it('a closed seam of two points is not doubled back (it needs three to enclose anything)', () => {
+    const path = g.seamPath(m.positions, { points: pts.slice(0, 2), closed: true });
+    expect(polylineLength(path)).toBeCloseTo(1, 9);
+  });
+  it('a single control point is that point', () => {
+    expect(g.seamPath(m.positions, { points: [pts[1]], closed: false })).toEqual([1, 0, 0]);
+  });
+  it('no control points give an empty path', () => {
+    expect(g.seamPath(m.positions, { points: [], closed: false })).toEqual([]);
+  });
+});
+
+describe('polylineLength', () => {
+  it('sums the segments', () => {
+    expect(polylineLength([0, 0, 0, 3, 4, 0, 3, 4, 12])).toBe(17);
+  });
+  it('is zero for none or one point', () => {
+    expect(polylineLength([])).toBe(0);
+    expect(polylineLength([1, 2, 3])).toBe(0);
+  });
+});
+
+describe('Heap', () => {
+  it('pops keys in ascending order whatever the insertion order', () => {
+    const h = new Heap();
+    const keys = [5, 3, 9, 1, 7, 3, 8, 2, 6, 4, 0, 10, 3];
+    keys.forEach((k, i) => h.push(k, 100 + i));
+    expect(h.size).toBe(keys.length);
+    expect(h.peekKey()).toBe(0);
+    const popped: number[] = [];
+    while (h.size > 0) popped.push(h.pop()[0]);
+    expect(popped).toEqual([...keys].sort((a, b) => a - b));
+  });
+  it('returns each key with its own node', () => {
+    const h = new Heap();
+    for (const [k, n] of [[4, 40], [2, 20], [3, 30], [1, 10], [5, 50]]) h.push(k, n);
+    expect([h.pop(), h.pop(), h.pop(), h.pop(), h.pop()]).toEqual([[1, 10], [2, 20], [3, 30], [4, 40], [5, 50]]);
+  });
+  it('works when interleaving pushes and pops, and with one element', () => {
+    const h = new Heap();
+    h.push(2, 2);
+    expect(h.pop()).toEqual([2, 2]);
+    expect(h.size).toBe(0);
+    h.push(5, 5); h.push(1, 1); h.push(3, 3);
+    expect(h.pop()).toEqual([1, 1]);
+    h.push(0, 0); h.push(4, 4);
+    expect([h.pop()[0], h.pop()[0], h.pop()[0], h.pop()[0]]).toEqual([0, 3, 4, 5]);
+  });
+});
+
+describe('raycast on a single tilted triangle', () => {
+  // Corners (0,0,0), (2,0,2), (0,2,2): not axis aligned, so a wrong edge vector or sign shows.
+  const tri: Mesh = { positions: Float64Array.from([0, 0, 0, 2, 0, 2, 0, 2, 2]), triangles: Uint32Array.from([0, 1, 2]) };
+  it('gives exact distance and barycentric weights for an oblique ray', () => {
+    // Target = 0.5*A + 0.25*B + 0.25*C = (0.5, 0.5, 1). Ray from (2.5, 2.5, 4) along (-2, -2, -3) / norm.
+    const dir: Vec3 = [-2, -2, -3];
+    const hit = raycast(tri, [2.5, 2.5, 4], dir)!;
+    expect(hit.t).toBeCloseTo(1, 12);
+    expect(hit.bary[0]).toBeCloseTo(0.5, 12);
+    expect(hit.bary[1]).toBeCloseTo(0.25, 12);
+    expect(hit.bary[2]).toBeCloseTo(0.25, 12);
+  });
+  it('misses on each of the three sides', () => {
+    expect(raycast(tri, [-0.2, 0.5, 5], [0, 0, -1])).toBeUndefined(); // beyond the edge A-C
+    expect(raycast(tri, [0.5, -0.2, 5], [0, 0, -1])).toBeUndefined(); // beyond the edge A-B
+    expect(raycast(tri, [1.5, 1.5, 5], [0, 0, -1])).toBeUndefined(); // beyond the edge B-C
+  });
+  it('does not hit a surface behind the origin', () => {
+    expect(raycast(tri, [0.5, 0.5, -5], [0, 0, -1])).toBeUndefined();
+  });
+});
+
+describe('SurfaceGraph.path through a shared vertex', () => {
+  // Two triangles that touch only at vertex 0: the only way from one to the other is through it.
+  const bow: Mesh = {
+    positions: Float64Array.from([0, 0, 0, 1, 0, 0, 0, 1, 0, -1, 0, 0, 0, -1, 0]),
+    triangles: Uint32Array.from([0, 1, 2, 0, 3, 4]),
+  };
+  it('includes vertex 0 itself', () => {
+    const g = graphOf(bow);
+    const a: SurfacePoint = { tri: 0, bary: [0.2, 0.4, 0.4] }; // (0.4, 0.4, 0)
+    const b: SurfacePoint = { tri: 1, bary: [0.2, 0.4, 0.4] }; // (-0.4, -0.4, 0)
+    const p = g.path(bow.positions, a, b);
+    expect(polylineLength(p)).toBeCloseTo(2 * Math.hypot(0.4, 0.4), 9);
+    expect(p).toContain(0);
+    expect(p.length).toBe(9);
+  });
+});

@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
 import type { FitTargets } from './core/fit';
 import { FIXTURES } from './core/fixtures';
+import { type Seam, SurfaceGraph, polylineLength, pointOnSurface, raycast, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
 
@@ -20,6 +21,10 @@ controls.innerHTML = `
   <button id="fit">Fit body</button> <button id="reset">Reset</button>
   <div style="margin-top:6px">View: <button data-view="front">Front</button> <button data-view="side">Side</button> <button data-view="back">Back</button> <button data-view="three">3/4</button> <button data-view="torso">Torso</button></div>
   <label><input type="checkbox" id="lines"> show where each ring is measured</label>
+  <h4>Seams</h4>
+  <label><input type="checkbox" id="draw"> draw seams: click the body to add points (drag to turn the view)</label><br>
+  <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-clear">Clear all</button>
+  <div id="seams" style="margin-top:4px"></div>
   <div id="status">Loading body model…</div>`;
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
@@ -54,6 +59,8 @@ new ResizeObserver(() => {
 let mesh: THREE.Mesh | undefined;
 const lineGroup = new THREE.Group();
 scene.add(lineGroup);
+const seamGroup = new THREE.Group();
+scene.add(seamGroup);
 
 const VIEWS: Record<string, [number, number, number, number, number, number]> = {
   // camera x,y,z then target x,y,z
@@ -80,6 +87,10 @@ document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.on
 let body: BodyModel;
 let measurer: Measurer;
 let current: BodyParams = {};
+let shapePositions: Float64Array = new Float64Array(0);
+let graph: SurfaceGraph;
+// The last seam is the one being drawn. Control points are stored on faces, so they follow the body when it is re-fitted.
+let seams: Seam[] = [];
 
 /** Remove an object and free its GPU resources (geometries and materials are not freed by removal). */
 function disposeTree(o: THREE.Object3D) {
@@ -117,22 +128,79 @@ $('lines').onchange = () => show(current);
 function show(params: BodyParams) {
   current = params;
   const shape = body.evaluate(params);
+  shapePositions = shape.positions;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.positions), 3));
   geo.setIndex(new THREE.BufferAttribute(body.faces, 1));
   geo.computeVertexNormals();
   if (mesh) { scene.remove(mesh); disposeTree(mesh); }
-  mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd9a08a }));
+  mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xd9a08a, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 }));
   scene.add(mesh);
   render();
   // One measurement pass: with the overlay on, the same pass also records what to draw.
   const info = $<HTMLInputElement>('lines').checked ? measurer.inspect(shape) : undefined;
   const m = info ? info.values : measurer.measure(shape);
   drawLines(info);
+  drawSeams();
   render();
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
   return m;
 }
+
+const bodyMesh = () => ({ positions: shapePositions, triangles: body.faces });
+
+function drawSeams() {
+  for (const c of [...seamGroup.children]) { seamGroup.remove(c); disposeTree(c); }
+  const m = bodyMesh();
+  const rows: string[] = [];
+  seams.forEach((seam, i) => {
+    const active = i === seams.length - 1;
+    const color = active ? 0xd01040 : 0x1060ff;
+    const path = graph.seamPath(shapePositions, seam);
+    if (path.length >= 6) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(path), 3));
+      seamGroup.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color })));
+    }
+    for (const p of seam.points) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(0.6), new THREE.MeshBasicMaterial({ color }));
+      dot.position.set(...pointOnSurface(m, p));
+      seamGroup.add(dot);
+    }
+    rows.push(`Seam ${i + 1}${active ? ' (drawing)' : ''}: ${seam.points.length} points${seam.closed ? ', closed' : ''}, ${polylineLength(path).toFixed(1)} cm`);
+  });
+  $('seams').innerHTML = rows.join('<br>') || '<span style="color:#555">No seams yet.</span>';
+}
+const activeSeam = () => seams[seams.length - 1];
+const redrawSeams = () => { drawSeams(); render(); };
+
+// A click (not a drag, which turns the view) on the body adds a point to the active seam.
+let down: { x: number; y: number } | undefined;
+renderer.domElement.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+renderer.domElement.addEventListener('pointerup', (e) => {
+  const start = down;
+  down = undefined;
+  if (!start || !$<HTMLInputElement>('draw').checked || !body) return;
+  if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -(((e.clientY - rect.top) / rect.height) * 2 - 1)), camera);
+  const hit = raycast(bodyMesh(), [ray.ray.origin.x, ray.ray.origin.y, ray.ray.origin.z], [ray.ray.direction.x, ray.ray.direction.y, ray.ray.direction.z]);
+  if (!hit) return;
+  if (!activeSeam() || activeSeam().closed) seams.push({ points: [], closed: false });
+  activeSeam().points.push(snapToVertex(bodyMesh(), { tri: hit.tri, bary: hit.bary }, 1));
+  redrawSeams();
+});
+$('seam-undo').onclick = () => {
+  if (!activeSeam()) return;
+  if (activeSeam().closed) activeSeam().closed = false;
+  else activeSeam().points.pop();
+  if (activeSeam().points.length === 0) seams.pop();
+  redrawSeams();
+};
+$('seam-close').onclick = () => { if (activeSeam() && activeSeam().points.length > 2) { activeSeam().closed = true; redrawSeams(); } };
+$('seam-new').onclick = () => { if (activeSeam() && activeSeam().points.length > 0 && !activeSeam().closed) { seams.push({ points: [], closed: false }); redrawSeams(); } };
+$('seam-clear').onclick = () => { seams = []; redrawSeams(); };
 
 const worker = new Worker(new URL('./fit.worker.ts', import.meta.url), { type: 'module' });
 let targetsAtFit: FitTargets = {};
@@ -197,6 +265,7 @@ $<HTMLSelectElement>('fixture').onchange = (e) => {
 loadBodyFromUrl(import.meta.env.BASE_URL + 'body')
   .then((b) => {
     body = b;
+    graph = new SurfaceGraph(b.faces, b.vertexCount);
     measurer = new Measurer(b);
     show({ z: b.presets.female });
     setControlsEnabled(true);

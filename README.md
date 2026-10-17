@@ -2,7 +2,7 @@
 
 Enter ordinary sewing measurements, get a 3D body that matches them (within 0.5 cm, usually much closer), then pull flat pattern panels off it along seams you draw, with ease as a percentage in each direction.
 
-Status: body from measurements works (34 measurements, standard tailor pose). Seam drawing and panel flattening on the new body are next. See `PLAN.md`.
+Status: body from measurements works (34 measurements, standard tailor pose). Seam drawing has started (click the body to draw seams, with lengths); panel detection and flattening on the new body are next. See `PLAN.md`.
 
 ## Read these first
 
