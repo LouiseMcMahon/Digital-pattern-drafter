@@ -9,7 +9,7 @@ Read `REQUIREMENTS.md` first (R1 match the measurements, R2 extremes, R5 tailor 
 | Layer | Where | What it stops |
 |---|---|---|
 | Unit tests | `slice.test.ts`, `bodyModel.test.ts`, `flatten.test.ts`, `body.test.ts` | Geometry helpers (slicing, arcs, loading, flattening) giving wrong answers on shapes with known answers. |
-| **Mutation gate** | `scripts/mutate.mjs`, `mutation-thresholds.json` | **Tests that run but would not notice a change.** Stryker mutates `slice`, `pose`, `bodyModel` and `flatten` one small change at a time and re-runs their unit tests; a module whose score falls below its minimum fails. **First stage of `npm run check` and of CI.** |
+| **Mutation gate** | `scripts/mutate.mjs`, `mutation-thresholds.json` | **Tests that run but would not notice a change.** Stryker mutates every geometry module (`slice`, `pose`, `bodyModel`, `mesh`, `ease`, `lscm`, `flatten`, `body`) one small change at a time and re-runs their unit tests; a module whose score falls below its minimum fails. **First stage of `npm run check` (changed modules only) and of CI (all modules).** |
 | Pose tests (R5) | `pose.test.ts` | The tailor pose changing: arm angle, vertical legs, flat feet, bone lengths, symmetry. |
 | Measurement invariants | `measure.invariants.test.ts` | A definition changing meaning: scale covariance, `armLength = upper + forearm`, `crotchDepth = waistHeight - insideLeg`, each control moving the measurement it is named for. |
 | Smoothness | `measure.smoothness.test.ts` | A measurement that jumps (a ring that switches loop, a path that goes the long way round). The fit is gradient-based and stalls on jumps. This found three real bugs. |
@@ -30,10 +30,11 @@ Every guard has been checked by breaking the thing it guards (a 0.1 cm calibrati
 | `npm run test:fast` | Quick loop while editing (skips the slow fit and golden suites). |
 | `npm test` | Everything (about 45 s). |
 | `npm run coverage` | Everything plus the coverage thresholds (about 2 min). What CI runs. |
-| `npm run check` | **Mutation gate**, then typecheck, coverage, build. The full gate: run it before merging (about 30 minutes: the mutation stage is most of it). |
+| `npm run check` | **Mutation gate on the modules you changed** (`mutate:changed`: source or tests that differ from `origin/main` or are uncommitted), then typecheck, coverage, build. Usually minutes. CI runs the gate on every module. |
 | `npm run check:fast` | Typecheck, coverage, build, without mutation. For the edit-test loop; CI always runs the full gate. |
-| `npm run mutate:gate` | Mutation testing of every module against its minimum score. |
-| `npm run mutate -- <module> [--gate]` | Mutation testing (Stryker) of one module against its own unit tests: `slice`, `pose`, `flatten`, `bodyModel`, or `all`. Minutes per module (slice 8, pose 10, bodyModel 24). `--gate` fails below the minimum. Report: `reports/mutation/index.html`. |
+| `npm run mutate:changed` | Mutation gate for just the modules changed since `origin/main` (set `MUTATE_BASE` to compare against something else). |
+| `npm run mutate:gate` | Mutation gate for every module (what CI does, one job per module). |
+| `npm run mutate -- <module> [--gate]` | Mutation testing (Stryker) of one module against its own unit tests: `slice`, `pose`, `bodyModel`, `mesh`, `ease`, `lscm`, `flatten`, `body`, `all` or `changed`. Minutes per module (body 3, mesh/ease/lscm 1-3, slice 8, pose 10, flatten 16, bodyModel 24). `--gate` fails below the minimum. Report: `reports/mutation/index.html`. |
 | `npm run build && npm run e2e` | Browser smoke test. Set `CHROMIUM_PATH` to use a specific browser. |
 | `npm run fixtures:regenerate` | Regenerate `src/core/fixtures.ts` from `fixtureSeeds.ts`. |
 | `npm run golden:update` | Rewrite the golden file, keeping the stored fixture-body parameters. Prints a drift report. |

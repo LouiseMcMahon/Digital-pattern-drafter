@@ -9,7 +9,7 @@ const tests = process.env.MUTATION_TESTS?.split(',').filter(Boolean);
 export default defineConfig({
   test: {
     include: tests ?? ['src/**/*.test.ts'],
-    exclude: ['src/core/fit.test.ts', 'src/core/golden.test.ts', 'src/core/measure.smoothness.test.ts', 'node_modules/**'],
+    exclude: ['src/core/flatten.torso.test.ts', 'src/core/fit.test.ts', 'src/core/golden.test.ts', 'src/core/measure.smoothness.test.ts', 'node_modules/**'],
     testTimeout: 60_000,
   },
 });

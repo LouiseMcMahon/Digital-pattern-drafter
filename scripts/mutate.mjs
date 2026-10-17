@@ -20,9 +20,18 @@ const MODULES = {
 const args = process.argv.slice(2);
 const gate = args.includes('--gate');
 const wanted = args.filter((a) => !a.startsWith('--'));
-const names = wanted.includes('all') ? Object.keys(MODULES) : wanted;
-if (names.length === 0 || names.some((n) => !MODULES[n])) {
-  console.error(`usage: npm run mutate -- <${Object.keys(MODULES).join('|')}|all> ... [--gate]`);
+
+/** Modules whose source or tests differ from the base branch (or are uncommitted): what a developer needs to re-check locally. */
+function changedModules() {
+  const git = (...a) => spawnSync('git', a, { encoding: 'utf8' }).stdout.split('\n').filter(Boolean);
+  const base = process.env.MUTATE_BASE ?? 'origin/main';
+  const files = new Set([...git('diff', '--name-only', `${base}...HEAD`), ...git('diff', '--name-only', 'HEAD'), ...git('ls-files', '--others', '--exclude-standard')]);
+  return Object.keys(MODULES).filter((n) => files.has(MODULES[n].mutate) || MODULES[n].tests.some((t) => files.has(t)));
+}
+const names = wanted.includes('changed') ? changedModules() : wanted.includes('all') ? Object.keys(MODULES) : wanted;
+if (wanted.includes('changed')) console.log(names.length ? `changed modules: ${names.join(', ')}` : 'no mutation-tested module changed; nothing to do');
+if ((names.length === 0 && !wanted.includes('changed')) || names.some((n) => !MODULES[n])) {
+  console.error(`usage: npm run mutate -- <${Object.keys(MODULES).join('|')}|all|changed> ... [--gate]`);
   process.exit(2);
 }
 const thresholds = JSON.parse(readFileSync('mutation-thresholds.json', 'utf8'));

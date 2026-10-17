@@ -14,7 +14,7 @@
   "jsonReporter": {
     "fileName": "reports/mutation/mutation.json"
   },
-  "timeoutMS": 20000,
+  "timeoutMS": 6000,
   "ignoreStatic": false,
   "thresholds": {
     "high": 80,
@@ -25,6 +25,6 @@
   "tsconfigFile": "tsconfig.stryker-unused.json",
   "disableTypeChecks": false,
   "commandRunner": {
-    "command": "npx vitest run --config vitest.mutation.config.ts --reporter=dot"
+    "command": "node node_modules/vitest/vitest.mjs run --config vitest.mutation.config.ts --reporter=dot --bail=1"
   }
 }

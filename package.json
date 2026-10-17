@@ -15,8 +15,9 @@
     "golden:update": "UPDATE_GOLDEN=1 vitest run src/core/golden.test.ts --testTimeout=600000",
     "golden:refit": "UPDATE_GOLDEN=refit vitest run src/core/golden.test.ts --testTimeout=600000",
     "e2e": "node scripts/e2e-smoke.mjs",
-    "check": "npm run mutate:gate && npm run typecheck && npm run coverage && npm run build",
+    "check": "npm run mutate:changed && npm run typecheck && npm run coverage && npm run build",
     "mutate:gate": "node scripts/mutate.mjs all --gate",
+    "mutate:changed": "node scripts/mutate.mjs changed --gate",
     "check:fast": "npm run typecheck && npm run coverage && npm run build"
   },
   "devDependencies": {
