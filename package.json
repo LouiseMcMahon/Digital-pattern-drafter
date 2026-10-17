@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:fast": "vitest run --exclude src/core/fit.test.ts --exclude src/core/golden.test.ts",
     "coverage": "vitest run --coverage",
+    "mutate": "node scripts/mutate.mjs",
     "fixtures:regenerate": "REGEN_FIXTURES=1 vitest run src/core/fixtures.generate.test.ts --testTimeout=900000",
     "golden:update": "UPDATE_GOLDEN=1 vitest run src/core/golden.test.ts --testTimeout=600000",
     "golden:refit": "UPDATE_GOLDEN=refit vitest run src/core/golden.test.ts --testTimeout=600000",
@@ -17,6 +18,8 @@
     "check": "npm run typecheck && npm run coverage && npm run build"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
     "@types/node": "^26.6.5",
     "@types/three": "^0.186.0",
     "@vitest/coverage-v8": "^5.0.5",

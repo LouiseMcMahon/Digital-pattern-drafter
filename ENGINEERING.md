@@ -29,10 +29,20 @@ Every guard has been checked by breaking the thing it guards (a 0.1 cm calibrati
 | `npm test` | Everything (about 45 s). |
 | `npm run coverage` | Everything plus the coverage thresholds (about 2 min). What CI runs. |
 | `npm run check` | Typecheck, coverage, build. **Run before every commit.** |
+| `npm run mutate -- <module>` | Mutation testing (Stryker) of one module against its own unit tests: `slice`, `pose`, `flatten`, `bodyModel`, or `all`. Minutes per module; not in CI. Report: `reports/mutation/index.html`. |
 | `npm run build && npm run e2e` | Browser smoke test. Set `CHROMIUM_PATH` to use a specific browser. |
 | `npm run fixtures:regenerate` | Regenerate `src/core/fixtures.ts` from `fixtureSeeds.ts`. |
 | `npm run golden:update` | Rewrite the golden file, keeping the stored fixture-body parameters. Prints a drift report. |
 | `npm run golden:refit` | As above, and re-fit the fixture bodies (after the fixtures changed). |
+
+## Mutation testing
+
+Coverage says a line ran; mutation testing says a test would notice if it were wrong. Stryker changes the code one small way at a time (`<` to `<=`, `+` to `-`, a branch removed) and re-runs the tests; a mutant that no test fails on is a *survivor* and points at a missing assertion. It is a tool for finding gaps, not a gate: it is **not in CI** and has no threshold.
+
+- Run `npm run mutate -- slice` (see the table above), then open `reports/mutation/index.html` and read the survivors.
+- Each mutant re-runs the selected tests, so `scripts/mutate.mjs` maps each module to the test files that exercise it, and `vitest.mutation.config.ts` leaves out the fit, golden and smoothness suites (minutes each).
+- **Read scores with that in mind.** First run (2026-10): `slice.ts` 28% and `pose.ts` 3% against their own unit tests. `pose.ts` is mostly guarded by the golden and measurement suites, which are excluded, so its low score is a statement about the unit tests, not about the model's protection. Survivors in `slice.ts` (arc interpolation, loop length) are real candidates for new tests with analytic answers.
+- Workarounds in `stryker.config.json`, all caused by the current toolchain: `coverageAnalysis: "all"` because `perTest` runs zero tests per mutant with Vitest 5 and `@stryker-mutator/vitest-runner` 10 (every mutant then "survives", a false 0%); `tsconfigFile` points at a file that does not exist because Stryker's tsconfig rewrite needs the TypeScript JS API, which TypeScript 7 does not ship. Do not switch on `inPlace`: a killed run leaves the working tree full of instrumented files.
 
 ## Rules
 
