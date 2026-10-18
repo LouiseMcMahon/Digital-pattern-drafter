@@ -263,7 +263,14 @@ function refreshPanels() {
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<label>Panel ${i + 1} ease % across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal" style="width:48px"></label> <label>down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical" style="width:48px"></label> <button data-delete-panel="${i}">Remove</button>`;
     if (!d.sub) { rows.push(`<span style="color:#c00">${ease}<br>${d.error}</span>`); return; }
-    const flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    let flat: ReturnType<typeof flatten>;
+    try {
+      flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    } catch (err) {
+      console.error(err);
+      rows.push(`<span style="color:#c00">${ease}<br>This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.</span>`);
+      return;
+    }
     const tooCurved = flat.worstStrain > FLATTEN_TOLERANCE;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.cut.mesh.positions), 3));

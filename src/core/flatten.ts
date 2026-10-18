@@ -43,6 +43,7 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   const opts = { ...options, ease: sortedField(options.ease) };
   const up = opts.up ?? [0, 1, 0];
   const n = vertexCount(mesh);
+  if (n === 0 || triangleCount(mesh) === 0) return { uv: new Float64Array(2 * n), rmsEdgeError: 0, flippedTriangles: 0, worstStrain: 0, vertexStrain: new Float64Array(n) };
   const normals = vertexNormals(mesh);
 
   // Unique edges with eased target lengths.
@@ -66,7 +67,7 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     const s = scalesAt(opts.ease, ymid);
     ea.push(a);
     eb.push(b);
-    target.push(Math.sqrt((s.horizontal * dh) ** 2 + (s.vertical * dv) ** 2 + rest));
+    target.push(Math.max(1e-9, Math.sqrt((s.horizontal * dh) ** 2 + (s.vertical * dv) ** 2 + rest))); // a zero-length edge must not divide by zero below
   };
   for (let t = 0; t < triangleCount(mesh); t++) {
     const [a, b, c] = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
@@ -95,10 +96,13 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     sh += s.horizontal / n;
     sv += s.vertical / n;
   }
+  const fit = cur > 0 && Number.isFinite(base / cur) ? base / cur : 1; // a collapsed unwrap cannot be scaled
   for (let i = 0; i < n; i++) {
-    uv[2 * i] *= (base / cur) * sh;
-    uv[2 * i + 1] *= (base / cur) * sv;
+    uv[2 * i] *= fit * sh;
+    uv[2 * i + 1] *= fit * sv;
   }
+  for (let i = 0; i < 2 * n; i++) if (!Number.isFinite(uv[i])) uv[i] = 0;
+  const initial = Float64Array.from(uv);
 
   // As-rigid-as-possible refinement (Liu et al. 2008, "local-global"). Each triangle has a target shape in the plane,
   // built from its eased edge lengths. Alternate: (local) turn each target shape to best fit the current layout;
@@ -232,7 +236,8 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     }
     if (moved < settled) break;
   }
-  for (let i = 0; i < n; i++) { uv[2 * i] = X[i]; uv[2 * i + 1] = Y[i]; }
+  const finite = X.every(Number.isFinite) && Y.every(Number.isFinite);
+  for (let i = 0; i < n; i++) { uv[2 * i] = finite ? X[i] : initial[2 * i]; uv[2 * i + 1] = finite ? Y[i] : initial[2 * i + 1]; } // a solve that blew up keeps the initial layout
 
   // Length-weighted, so a handful of very short edges (a seam passing close to a vertex) cannot dominate the figure.
   let se = 0;

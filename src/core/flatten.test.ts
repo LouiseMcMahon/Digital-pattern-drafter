@@ -123,6 +123,20 @@ describe('flatten on a flat wall', () => {
     expect(() => flatten({ positions, triangles: m.triangles }, { ease: uniformEase(0, 0) })).not.toThrow();
   });
 
+  it('does not crash on an empty mesh or one with no triangles', () => {
+    const empty = flatten({ positions: new Float64Array(0), triangles: new Uint32Array(0) }, { ease: uniformEase(0, 0) });
+    expect(empty.uv.length).toBe(0);
+    const points = flatten({ positions: Float64Array.from([0, 0, 0, 1, 0, 0]), triangles: new Uint32Array(0) }, { ease: uniformEase(0, 0) });
+    expect(Array.from(points.uv)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('returns finite positions for a triangle with a zero-length edge', () => {
+    const m: Mesh = { positions: Float64Array.from([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0]), triangles: Uint32Array.from([0, 1, 2, 0, 2, 3, 1, 2, 3]) };
+    const r = flatten(m, { ease: uniformEase(0, 0) });
+    expect(Array.from(r.uv).every(Number.isFinite)).toBe(true);
+    expect(Number.isFinite(r.worstStrain)).toBe(true);
+  });
+
   it('zero iterations returns the initial layout, already scaled to the body and mean ease', () => {
     const r = flatten(wall(6, 5), { ease: uniformEase(10, 0), iterations: 0 });
     expect(rowWidth(r.uv, 0, 6)).toBeCloseTo(5.5, 3);
