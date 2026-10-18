@@ -18,7 +18,9 @@ const threeEl = document.getElementById('three')!;
 
 controls.innerHTML = `
   <div class="head"><h1>Digital Pattern Drafter</h1><p>Shape a body, draw seams, flatten panels.</p></div>
-  <details open><summary>1 · Body</summary><div class="body">
+  <div class="tabs" role="tablist"><button role="tab" class="active" data-tab="measure">Measurements</button><button role="tab" data-tab="draw">Drawing</button></div>
+  <div class="tabpane" data-pane="measure">
+  <details open><summary>Body</summary><div class="body">
     <div class="row">
       <select id="preset" class="grow" title="Starting body"><option value="female">Woman</option><option value="male">Man</option></select>
       <select id="fixture" class="grow" title="Load an example set of measurements"><option value="">Example…</option>${Object.entries(FIXTURES).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join('')}</select>
@@ -30,7 +32,9 @@ controls.innerHTML = `
     <div class="row"><button id="fit" class="primary grow">Fit body</button><button id="reset">Reset</button></div>
     <label class="switch"><input type="checkbox" id="lines"><span>Show where each ring is measured</span></label>
   </div></details>
-  <details open><summary>2 · Seams</summary><div class="body">
+  </div>
+  <div class="tabpane" data-pane="draw" hidden>
+  <details open><summary>Seams</summary><div class="body">
     <label class="switch" title="Click the body to add points, drag a point to move it, shift-click a point to delete it. Click the first point to close the seam. Points snap to landmarks (green), the bust, waist and hip lines (teal) and other seams; a label shows what a click will snap to."><input type="checkbox" id="draw"><span><b>Draw seams</b><br><span class="hint">Click to add points · drag to move · shift-click to delete · click the first point to close</span></span></label>
     <div class="row">
       <button id="seam-undo" title="Remove the last point">Undo</button>
@@ -41,12 +45,21 @@ controls.innerHTML = `
     </div>
     <div id="seams"></div>
   </div></details>
-  <details open><summary>3 · Panels</summary><div class="body">
+  <details open><summary>Panels</summary><div class="body">
     <div class="row"><button id="panel-pick" class="grow" title="Then click inside a closed set of seams">Make a panel</button><button id="panel-clear" class="danger">Clear</button></div>
     <div id="panels"></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
   </div></details>
+  </div>
   <div id="status">Loading body model…</div>`;
+controls.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((tab) => tab.addEventListener('click', () => {
+  controls.querySelectorAll<HTMLButtonElement>('.tabs button').forEach((t) => {
+    const on = t === tab;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+  controls.querySelectorAll<HTMLElement>('.tabpane').forEach((p) => { p.hidden = p.dataset.pane !== tab.dataset.tab; });
+}));
 const viewbar = document.createElement('div');
 viewbar.className = 'viewbar';
 viewbar.innerHTML = '<button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="three">3/4</button><button data-view="torso">Torso</button>';
@@ -59,7 +72,7 @@ document.body.append(hoverEl);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
 // Nothing can be used before the body model has loaded: the handlers below all need it.
-const setControlsEnabled = (on: boolean) => document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('aside input, aside select, aside button, .viewbar button').forEach((el) => { el.disabled = !on; });
+const setControlsEnabled = (on: boolean) => document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('aside input, aside select, aside button:not([role=tab]), .viewbar button').forEach((el) => { el.disabled = !on; });
 setControlsEnabled(false);
 
 // 3D view

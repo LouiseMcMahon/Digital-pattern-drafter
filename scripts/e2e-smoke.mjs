@@ -74,6 +74,7 @@ try {
   await page.screenshot({ path: 'e2e-out/page.png' });
 
   // Seam drawing: with the mode on, three clicks down the front of the torso make one seam with a length.
+  await page.click('[data-tab=draw]');
   await page.check('#draw');
   const box = await page.locator('#three canvas').boundingBox();
   for (const dy of [-300, -150, -40]) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2 + dy);
