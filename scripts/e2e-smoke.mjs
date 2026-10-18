@@ -189,10 +189,12 @@ try {
     add([P('neck point L'), back(0, 152), P('neck point R')]);
     add([P('neck point L'), P('shoulder point L')]);
     add([P('neck point R'), P('shoulder point R')]);
-    add([P('shoulder point L'), front(17, 141), P('axilla L')]);
-    add([P('shoulder point L'), back(17, 141), P('axilla L')]);
-    add([P('shoulder point R'), front(-17, 141), P('axilla R')]);
-    add([P('shoulder point R'), back(-17, 141), P('axilla R')]);
+    // Half way between the shoulder point and the underarm, wherever the pose puts the arm.
+    const armhole = (side) => { const [a, b] = [lm[`shoulder point ${side}`], lm[`axilla ${side}`]]; return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+    add([P('shoulder point L'), front(...armhole('L')), P('axilla L')]);
+    add([P('shoulder point L'), back(...armhole('L')), P('axilla L')]);
+    add([P('shoulder point R'), front(...armhole('R')), P('axilla R')]);
+    add([P('shoulder point R'), back(...armhole('R')), P('axilla R')]);
     add([P('axilla L'), sideL]);
     add([P('axilla R'), sideR]);
     add([sideL, front(8, 105), front(0, 105), front(-8, 105), sideR]);
