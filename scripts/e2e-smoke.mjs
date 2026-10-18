@@ -199,7 +199,7 @@ try {
     window.panelAtSpec(back(0, 125));
     return document.getElementById('panels').innerText;
   });
-  const sides = (text) => [...text.matchAll(/Seam (\d+): ([0-9.]+) cm \(flat ([0-9.]+)\)(, shared with panel (\d+))?/g)].map((m) => ({ seam: Number(m[1]), length: Number(m[2]), shared: m[5] ? Number(m[5]) : undefined }));
+  const sides = (text) => [...text.matchAll(/Seam (\d+): ([0-9.]+) cm \(flat ([0-9.]+)\)(, shared with panel (\d+))?/g)].map((m) => ({ seam: Number(m[1]), length: Number(m[2]), flat: Number(m[3]), shared: m[5] ? Number(m[5]) : undefined }));
   const [frontText, backText] = made.split(/Panel 2/);
   const [frontSides, backSides] = [sides(frontText), sides(backText)];
   if (frontSides.length !== 8 || backSides.length !== 8) fail(`expected 8 sides on the front and back panels, got ${frontSides.length} and ${backSides.length}: "${made}"`);
@@ -208,6 +208,8 @@ try {
     const [a, b] = [frontSides.find((e) => e.seam === seam), backSides.find((e) => e.seam === seam)];
     if (!a || !b || a.shared !== 2 || b.shared !== 1) fail(`seam ${seam} should be shared by panels 1 and 2: "${made}"`);
     if (Math.abs(a.length - b.length) > 0.01) fail(`shared seam ${seam} has different lengths on the two panels: ${a.length} and ${b.length}`);
+    // On the flat patterns too: the same seam must be the same length on both panels, and as long as on the body.
+    if (Math.abs(a.flat - b.flat) > 0.15 || Math.abs(a.flat - a.length) > 0.004 * a.length + 0.05) fail(`shared seam ${seam} flattens to ${a.flat} cm and ${b.flat} cm (body ${a.length} cm): the panels would not fit together`);
   }
   if (frontSides.some((e) => !sharedSeams.includes(e.seam) && e.shared !== undefined)) fail('a seam only one panel touches was reported as shared');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panels-front-back.png' });

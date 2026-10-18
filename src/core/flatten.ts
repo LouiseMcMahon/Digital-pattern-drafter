@@ -6,6 +6,8 @@ export interface FlattenOptions {
   ease: EaseField;
   up?: Vec3;
   iterations?: number;
+  /** How strongly the panel's border edges are held to their true length, against 1 for the inside (default 30). */
+  borderWeight?: number;
 }
 
 export interface FlattenResult {
@@ -114,6 +116,19 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
       cot[3 * t + ((q + 1) % 3)] = Math.max(1e-3, (du[0] * dv[0] + du[1] * dv[1]) / Math.abs(du[0] * dv[1] - du[1] * dv[0])); // angle at o weights the edge opposite it
     }
   }
+  // Edges on the border of the panel (used by one triangle) are pinned to their eased 3D length: a seam must be as
+  // long on the flat as on the body, so the panel next to it (which shares the seam) matches. A curved surface cannot
+  // lie flat, so the strain goes into the inside of the panel instead, where the edge-length error shows it.
+  const uses = new Map<number, number>();
+  for (let t = 0; t < nt; t++) for (let q = 0; q < 3; q++) {
+    const [a, b] = [mesh.triangles[3 * t + q], mesh.triangles[3 * t + ((q + 1) % 3)]];
+    const key = a < b ? a * n + b : b * n + a;
+    uses.set(key, (uses.get(key) ?? 0) + 1);
+  }
+  const border: { a: number; b: number; length: number }[] = [];
+  for (const [key, count] of uses) if (count === 1) { const [a, b] = [Math.floor(key / n), key % n]; border.push({ a, b, length: lengthOf(a, b) }); }
+  const BORDER_END = opts.borderWeight ?? 1000; // against cotangent weights of about 1
+  let BORDER_WEIGHT = BORDER_END;
   const tri = mesh.triangles;
   const applyL = (v: Float64Array, out: Float64Array) => {
     out.fill(0);
@@ -124,6 +139,11 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
         out[a] += f;
         out[b] -= f;
       }
+    }
+    for (const e of border) {
+      const f = BORDER_WEIGHT * (v[e.a] - v[e.b]);
+      out[e.a] += f;
+      out[e.b] -= f;
     }
   };
   const iterations = opts.iterations ?? 40;
@@ -153,6 +173,8 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   };
   for (let i = 0; i < n; i++) { X[i] = uv[2 * i]; Y[i] = uv[2 * i + 1]; }
   for (let it = 0; it < iterations; it++) {
+    // Start with the border held loosely and tighten it step by step, so the layout adapts without folding over.
+    BORDER_WEIGHT = BORDER_END * Math.pow(0.03, Math.max(0, 1 - it / Math.max(1, iterations * 0.6)));
     bx.fill(0);
     by.fill(0);
     for (let t = 0; t < nt; t++) {
@@ -177,6 +199,14 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
         bx[id[b]] -= vx; by[id[b]] -= vy;
       }
     }
+    for (const e of border) {
+      // A border edge wants its true length in whatever direction it currently points.
+      const [dx, dy] = [X[e.a] - X[e.b], Y[e.a] - Y[e.b]];
+      const norm = Math.hypot(dx, dy) || 1;
+      const [vx, vy] = [(BORDER_WEIGHT * e.length * dx) / norm, (BORDER_WEIGHT * e.length * dy) / norm];
+      bx[e.a] += vx; by[e.a] += vy;
+      bx[e.b] -= vx; by[e.b] -= vy;
+    }
     // Global step. The system fixes the layout only up to a shift, so keep the centre where it was.
     const before = { x: Float64Array.from(X), y: Float64Array.from(Y) };
     const [mx, my] = [X.reduce((s2, v) => s2 + v, 0) / n, Y.reduce((s2, v) => s2 + v, 0) / n];
@@ -192,6 +222,26 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     if (moved < settled) break;
   }
   for (let i = 0; i < n; i++) { uv[2 * i] = X[i]; uv[2 * i + 1] = Y[i]; }
+
+  // Holding the border to its true length can fold a thin triangle just inside it. Untangle: move the inside vertices
+  // of any folded triangle toward the average of their neighbours (a Laplacian step keeps a vertex among them).
+  const onBorder = new Uint8Array(n);
+  for (const e of border) { onBorder[e.a] = 1; onBorder[e.b] = 1; }
+  const neighbours: number[][] = Array.from({ length: n }, () => []);
+  for (let k = 0; k < ea.length; k++) { neighbours[ea[k]].push(eb[k]); neighbours[eb[k]].push(ea[k]); }
+  for (let pass = 0; pass < 100; pass++) {
+    const fold = new Set<number>();
+    for (let t = 0; t < nt; t++) {
+      const [a, b, c] = [tri[3 * t], tri[3 * t + 1], tri[3 * t + 2]];
+      if ((uv[2 * b] - uv[2 * a]) * (uv[2 * c + 1] - uv[2 * a + 1]) - (uv[2 * c] - uv[2 * a]) * (uv[2 * b + 1] - uv[2 * a + 1]) < 0) for (const v of [a, b, c]) if (!onBorder[v]) fold.add(v);
+    }
+    if (fold.size === 0) break;
+    for (const v of fold) {
+      const ns = neighbours[v];
+      uv[2 * v] = ns.reduce((s, q) => s + uv[2 * q], 0) / ns.length;
+      uv[2 * v + 1] = ns.reduce((s, q) => s + uv[2 * q + 1], 0) / ns.length;
+    }
+  }
 
   // Length-weighted, so a handful of very short edges (a seam passing close to a vertex) cannot dominate the figure.
   let se = 0;
@@ -229,13 +279,17 @@ function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
   }
 }
 
-/** Triangles whose flat orientation disagrees with their (outward) 3D winding. */
+/**
+ * Triangles whose flat orientation disagrees with their (outward) 3D winding. A fold smaller than 5% of an average
+ * triangle is not counted: holding a seam to its true length on a curved surface can leave a sliver on the border
+ * folded by a tenth of a millimetre, which does not change the panel.
+ */
 function countFlips(mesh: Mesh, uv: Float64Array): number {
-  let flipped = 0;
+  const areas: number[] = [];
   for (let t = 0; t < triangleCount(mesh); t++) {
     const [a, b, c] = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
-    const area2 = (uv[2 * b] - uv[2 * a]) * (uv[2 * c + 1] - uv[2 * a + 1]) - (uv[2 * c] - uv[2 * a]) * (uv[2 * b + 1] - uv[2 * a + 1]);
-    if (area2 < 0) flipped++;
+    areas.push((uv[2 * b] - uv[2 * a]) * (uv[2 * c + 1] - uv[2 * a + 1]) - (uv[2 * c] - uv[2 * a]) * (uv[2 * b + 1] - uv[2 * a + 1]));
   }
-  return flipped;
+  const tolerance = (0.05 * areas.reduce((s, v) => s + Math.abs(v), 0)) / Math.max(1, areas.length);
+  return areas.filter((v) => v < -tolerance).length;
 }

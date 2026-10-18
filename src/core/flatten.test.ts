@@ -194,6 +194,29 @@ describe('flatten of a doubly curved patch (a square cut from a sphere)', () => 
     expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
     expect(worst).toBeLessThan(0.02 * 24);
   });
+  it('holds the border to its true length (the curvature goes into the inside), so a neighbouring panel can match it', () => {
+    const m = cap(n, 12, 30, 'same');
+    const ring = outline(m, flatten(m, { ease: uniformEase(0, 0) }).uv, n);
+    const perimeter = (o: [number, number][]) => o.reduce((s, p, i) => s + Math.hypot(p[0] - o[(i + 1) % o.length][0], p[1] - o[(i + 1) % o.length][1]), 0);
+    const body = (() => {
+      const id = (i: number, j: number) => (j + n) * (2 * n + 1) + (i + n);
+      const ids: number[] = [];
+      for (let i = -n; i < n; i++) ids.push(id(i, -n));
+      for (let j = -n; j < n; j++) ids.push(id(n, j));
+      for (let i = n; i > -n; i--) ids.push(id(i, n));
+      for (let j = n; j > -n; j--) ids.push(id(-n, j));
+      return ids.reduce((s, v, k) => { const w = ids[(k + 1) % ids.length]; return s + Math.hypot(...[0, 1, 2].map((q) => m.positions[3 * v + q] - m.positions[3 * w + q])); }, 0);
+    })();
+    expect(Math.abs(perimeter(ring) - body) / body).toBeLessThan(0.003);
+    // With the border free, the sphere's curvature changes it by a couple of percent instead (here it comes out longer).
+    const free = outline(m, flatten(m, { ease: uniformEase(0, 0), borderWeight: 0 }).uv, n);
+    expect(Math.abs(body - perimeter(free)) / body).toBeGreaterThan(0.01);
+  });
+  it('border edges follow the ease like the rest: 10% horizontal ease lengthens a horizontal border by 10%', () => {
+    const w = wall(6, 5);
+    const r = flatten(w, { ease: uniformEase(10, 0) });
+    expect(Math.abs(r.uv[2 * 5] - r.uv[0])).toBeCloseTo(5.5, 3);
+  });
   it('stays accurate with a very short edge in the mesh (the error is length-weighted)', () => {
     const m = wall(6, 5);
     m.positions[3 * 8] += 0.97; // vertex 8 (2, 1) almost on top of vertex 9 (3, 1): one edge of 0.03 cm
