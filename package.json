@@ -18,6 +18,7 @@
     "check": "npm run mutate:changed && npm run typecheck && npm run coverage && npm run build",
     "mutate:gate": "node scripts/mutate.mjs all --gate",
     "mutate:changed": "node scripts/mutate.mjs changed --gate",
+    "mutate:diff": "node scripts/mutate.mjs changed --diff --gate",
     "check:fast": "npm run typecheck && npm run coverage && npm run build"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 // Mutation testing with Stryker: `npm run mutate -- <module> [<module> ...] [--gate]` (or `all`).
+// With --diff only the lines that differ from the base branch (origin/main, or MUTATE_BASE) are mutated: `changed --diff` is the quick check while working.
 // Several modules (all, changed) run in parallel, one Stryker run each, `--jobs=N` at a time (default: one per CPU).
 // Each module is mutated against only the tests that exercise it, because every mutant re-runs them.
 // With --gate the run FAILS if a module's score is below its minimum in mutation-thresholds.json.
@@ -33,10 +34,34 @@ function changedModules() {
   const files = new Set([...git('diff', '--name-only', `${base}...HEAD`), ...git('diff', '--name-only', 'HEAD'), ...git('ls-files', '--others', '--exclude-standard')]);
   return Object.keys(MODULES).filter((n) => files.has(MODULES[n].mutate) || MODULES[n].tests.some((t) => files.has(t)));
 }
+const diffMode = args.includes('--diff');
+/** Line ranges of a source file that differ from the base branch (committed, uncommitted or new), or undefined if none. */
+function changedRanges(file) {
+  const run = (...a) => spawnSync('git', a, { encoding: 'utf8' }).stdout;
+  const base = process.env.MUTATE_BASE ?? 'origin/main';
+  const mergeBase = run('merge-base', base, 'HEAD').trim() || base;
+  const text = readFileSync(file, 'utf8');
+  if (run('ls-files', '--error-unmatch', file).trim() === '') return [[1, text.split('\n').length]]; // not tracked: all of it is new
+  const ranges = [];
+  for (const m of run('diff', '-U0', mergeBase, '--', file).matchAll(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/gm)) {
+    const [start, count] = [Number(m[1]), m[2] === undefined ? 1 : Number(m[2])];
+    if (count > 0) ranges.push([start, start + count - 1]);
+  }
+  return ranges.length ? ranges : undefined;
+}
 const names = wanted.includes('changed') ? changedModules() : wanted.includes('all') ? Object.keys(MODULES) : wanted;
+const ranges = new Map();
+if (diffMode) {
+  for (const n of [...names]) {
+    const r = names.includes(n) && MODULES[n] ? changedRanges(MODULES[n].mutate) : undefined;
+    if (r) ranges.set(n, r);
+    else names.splice(names.indexOf(n), 1);
+  }
+  console.log(names.length ? `mutating only the changed lines: ${names.map((n) => `${n} (${ranges.get(n).map(([a, b]) => (a === b ? a : `${a}-${b}`)).join(', ')})`).join('; ')}` : 'no changed source lines in any mutation-tested module; nothing to do');
+}
 if (wanted.includes('changed')) console.log(names.length ? `changed modules: ${names.join(', ')}` : 'no mutation-tested module changed; nothing to do');
-if ((names.length === 0 && !wanted.includes('changed')) || names.some((n) => !MODULES[n])) {
-  console.error(`usage: npm run mutate -- <${Object.keys(MODULES).join('|')}|all|changed> ... [--gate]`);
+if ((names.length === 0 && !wanted.includes('changed') && !diffMode) || names.some((n) => !MODULES[n])) {
+  console.error(`usage: npm run mutate -- <${Object.keys(MODULES).join('|')}|all|changed> ... [--gate] [--diff] [--jobs=N]`);
   process.exit(2);
 }
 const thresholds = JSON.parse(readFileSync('mutation-thresholds.json', 'utf8'));
@@ -66,7 +91,7 @@ function runModule(name, concurrency, quiet) {
   config.htmlReporter = { fileName: `${dir}/index.html` };
   config.jsonReporter = { fileName: `${dir}/mutation.json` };
   config.concurrency = concurrency;
-  config.mutate = [mutate];
+  config.mutate = ranges.has(name) ? ranges.get(name).map(([a, b]) => `${mutate}:${a}-${b}`) : [mutate];
   writeFileSync(`${dir}/stryker.config.json`, JSON.stringify(config, null, 2));
   const args = ['stryker', 'run', `${dir}/stryker.config.json`];
   const env = { ...process.env, MUTATION_TESTS: tests.join(',') };
@@ -92,6 +117,11 @@ const SLOWEST = ['flatten', 'geodesic', 'cut', 'seam', 'bodyModel', 'body', 'lsc
 const queue = [...names].sort((a, b) => (SLOWEST.indexOf(a) + 1 || 99) - (SLOWEST.indexOf(b) + 1 || 99));
 if (jobs > 1) console.log(`running ${names.length} modules, ${jobs} at a time, ${concurrency} Stryker worker(s) each (logs in reports/mutation/<module>/stryker.log)`);
 
+function survivors(name) {
+  const report = JSON.parse(readFileSync(`reports/mutation/${name}/mutation.json`, 'utf8'));
+  return Object.values(report.files).flatMap((f) => f.mutants).filter((m) => m.status === 'Survived').map((m) => ({ line: m.location.start.line, mutator: m.mutatorName, replacement: m.replacement ?? '' })).sort((a, b) => a.line - b.line);
+}
+
 const summary = [];
 let failed = false;
 async function worker() {
@@ -107,12 +137,19 @@ async function worker() {
       console.error(`\nHARNESS FAILURE for ${MODULES[name].mutate}: ${res.idle} of ${res.total} mutants "survived" without any test running. The score is meaningless. See ENGINEERING.md, "Mutation testing".`);
       failed = true;
     }
-    const below = gate && !(res.score >= min);
+    // On a handful of changed lines a percentage means little: list the survivors, and apply the minimum only to a sample of 20 or more.
+    const sample = !diffMode || res.total >= 20;
+    if (diffMode && res.survived > 0) {
+      const lines = readFileSync(MODULES[name].mutate, 'utf8').split('\n');
+      console.log(`\n${name}: ${res.survived} of ${res.total} mutants on the changed lines survived; each is a test that would not notice the change (or an equivalent mutant: see ENGINEERING.md):`);
+      for (const m of survivors(name)) console.log(`  ${MODULES[name].mutate}:${m.line}  ${m.mutator}  \`${lines[m.line - 1].trim().slice(0, 90)}\` -> \`${m.replacement.slice(0, 50)}\``);
+    }
+    const below = gate && sample && !(res.score >= min);
     if (below) {
       console.error(`\nMUTATION GATE FAILED for ${MODULES[name].mutate}: score ${res.score.toFixed(2)}% is below the minimum ${min}% (${res.survived} mutants survived). Open reports/mutation/${name}/index.html, kill the survivors that are real gaps, and see ENGINEERING.md, "Mutation testing".`);
       failed = true;
     }
-    summary.push({ name, ...res, min, minutes, ok: !below && res.idle === 0 });
+    summary.push({ name, ...res, min, minutes, ok: !below && res.idle === 0, ungated: gate && !sample });
     if (jobs > 1) console.log(`  finished ${name} in ${minutes} min: ${res.score.toFixed(2)}%`);
   }
 }
@@ -121,6 +158,6 @@ await Promise.all(Array.from({ length: jobs }, worker));
 console.log('\n=== mutation summary ===');
 for (const name of names) {
   const s = summary.find((q) => q.name === name);
-  console.log(!s || s.error ? `  ${name}: ${s?.error ?? 'did not run'}` : `  ${name.padEnd(10)} ${s.score.toFixed(2).padStart(6)}%  (minimum ${s.min}%)  ${s.detected}/${s.total} mutants detected  ${s.minutes} min  ${s.ok ? 'ok' : 'FAILED'}`);
+  console.log(!s || s.error ? `  ${name}: ${s?.error ?? 'did not run'}` : `  ${name.padEnd(10)} ${s.score.toFixed(2).padStart(6)}%  (minimum ${s.min}%)  ${s.detected}/${s.total} mutants detected  ${s.minutes} min  ${s.ok ? 'ok' : 'FAILED'}${s.ungated ? ' (changed lines only: too few mutants to apply the minimum, survivors listed above)' : ''}`);
 }
 process.exit(failed ? 1 : 0);
