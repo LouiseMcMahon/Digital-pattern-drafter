@@ -5,7 +5,7 @@ import { flatten } from './flatten';
 import { loadBodyFromDisk } from './loadBodyNode';
 import { Measurer } from './measure';
 import { SurfaceField } from './bodyField';
-import { drapeCloth } from './cloth';
+import { clothPattern } from './cloth';
 import { drape, drapeSeams } from './drape';
 import { extractSubmesh } from './mesh';
 import { type Seam, type SurfacePoint, SurfaceGraph, closestSurfacePoint, raycast } from './seam';
@@ -62,8 +62,8 @@ async function build(ease: { front: [number, number]; back: [number, number] } =
     const draped = drape(sub.mesh, { boundary });
     const flatDraped = flatten(draped.mesh, { ease: uniformEase(e[0], e[1]) });
     // The cloth simulation takes seconds, so it runs only for the panels a test asks about.
-    let memo: ReturnType<typeof drapeCloth> | undefined;
-    const cloth = () => (memo ??= drapeCloth(draped.mesh, flatDraped.uv, bodyField, { targets: draped.mesh.positions, iterations: 1500, borderWeight: 0.1 }));
+    let memo: ReturnType<typeof clothPattern> | undefined;
+    const cloth = () => (memo ??= clothPattern(draped.mesh, flatDraped.uv, bodyField));
     const subOf = new Map(sub.vertexMap.map((v, i) => [v, i]));
     const edges = panelEdges(cut, triangles)!.map((edge) => ({
       seam: edge.seam,
@@ -130,12 +130,19 @@ describe('bodice front and back sharing seams (real body)', () => {
     expect(shoulderResult.side!.flatDraped.worstStrain).toBeLessThanOrEqual(shoulderResult.side!.flat.worstStrain);
     for (const p of [shoulderResult.front, shoulderResult.side!]) expect(p.flatDraped.flippedTriangles).toBe(0);
   });
-  it('a cloth simulation needs less stretch than the membrane drape did, and the seams fall a little short instead', () => {
+  it('the seams of a simulated cloth fall a little short of their lines, not far, and it never goes below the body', () => {
     for (const p of [shoulderResult.front, shoulderResult.side!]) {
       const c = p.cloth();
-      expect(c.worstStrain).toBeLessThan(0.8 * p.flatDraped.worstStrain);
       expect(c.maxSeamError).toBeLessThan(2); // cm: the seams fall a little short of their lines, not far
       for (const gap of c.gap) expect(gap).toBeGreaterThanOrEqual(0);
     }
   }, 120_000);
+  it('a simulated cloth and its own flattening need little stretch: far less than the membrane drape, within about 0.5% for the princess panels', () => {
+    const [centre, side, whole] = [shoulderResult.front.cloth(), shoulderResult.side!.cloth(), result.front.cloth()];
+    expect(centre.worstStrain).toBeLessThan(0.005);
+    expect(side.worstStrain).toBeLessThan(0.008);
+    expect(whole.worstStrain).toBeLessThan(0.02);
+    expect(whole.worstStrain).toBeLessThan(0.2 * result.front.flatDraped.worstStrain);
+    for (const c of [centre, side, whole]) expect(c.flippedTriangles).toBe(0);
+  }, 300_000);
 });

@@ -1,4 +1,6 @@
 import type { SurfaceField } from './bodyField';
+import { uniformEase } from './ease';
+import { flatten } from './flatten';
 import { type Mesh, boundaryLoops, meshEdges, vertexCount } from './mesh';
 
 /**
@@ -137,4 +139,44 @@ export function drapeCloth(start: Mesh, flat: ArrayLike<number>, body: SurfaceFi
     if (onBorder[v]) { seamError[v] = Math.hypot(pos[3 * v] - targets[3 * v], pos[3 * v + 1] - targets[3 * v + 1], pos[3 * v + 2] - targets[3 * v + 2]); maxSeamError = Math.max(maxSeamError, seamError[v]); }
   }
   return { mesh: { positions: pos, triangles: start.triangles }, gap, vertexStrain, worstStrain, seamError, maxSeamError, iterations: done };
+}
+
+export interface ClothPatternOptions extends ClothOptions {
+  /** Simulate-then-reflatten rounds: the first is a full run, each later one a short touch-up. Default 2. */
+  rounds?: number;
+}
+
+export interface ClothPatternResult {
+  /** The cloth as laid over the body. */
+  mesh: Mesh;
+  /** The flat pattern that goes with it: the cloth flattened (xy per vertex, cm). */
+  uv: Float64Array;
+  /** The 98th percentile of |flat length / 3D length - 1| between this mesh and this pattern (the stretch a piece cut to this pattern needs). */
+  worstStrain: number;
+  vertexStrain: Float64Array;
+  flippedTriangles: number;
+  gap: Float64Array;
+  seamError: Float64Array;
+  maxSeamError: number;
+}
+
+/**
+ * Lay a pattern over the body and find the pattern that fits the result.
+ *
+ * `drapeCloth` keeps every edge at the length of the pattern it was given, but that pattern was cut for the membrane
+ * drape, not for the shape the cloth ends up in; measured against it there is 1 to 2% left over. The cloth itself is
+ * close to developable (flattened, it needs 0.1 to 0.7%), so the honest pair is the cloth and its own flattening,
+ * and that is what is returned, with the stretch between them. Later rounds simulate again from the cloth against its
+ * new pattern, which tightens it a little more. Ease is already in the starting pattern, so later flattenings use none.
+ */
+export function clothPattern(draped: Mesh, flat: ArrayLike<number>, body: SurfaceField, options: ClothPatternOptions = {}): ClothPatternResult {
+  const { rounds = 2, ...rest } = options;
+  const config: ClothOptions = { iterations: 1500, borderWeight: 0.05, edgePasses: 16, targets: draped.positions, ...rest };
+  let cloth = drapeCloth(draped, flat, body, config);
+  let pattern = flatten(cloth.mesh, { ease: uniformEase(0, 0) });
+  for (let round = 1; round < rounds; round++) {
+    cloth = drapeCloth(cloth.mesh, pattern.uv, body, { ...config, iterations: Math.round((config.iterations ?? 1500) / 4) });
+    pattern = flatten(cloth.mesh, { ease: uniformEase(0, 0) });
+  }
+  return { mesh: cloth.mesh, uv: pattern.uv, worstStrain: pattern.worstStrain, vertexStrain: pattern.vertexStrain, flippedTriangles: pattern.flippedTriangles, gap: cloth.gap, seamError: cloth.seamError, maxSeamError: cloth.maxSeamError };
 }

@@ -4,7 +4,7 @@ import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyMod
 import { GUIDE_RINGS, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { SurfaceField } from './core/bodyField';
-import { type ClothResult, drapeCloth } from './core/cloth';
+import { type ClothPatternResult, clothPattern } from './core/cloth';
 import { drape, drapeSeams } from './core/drape';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -297,7 +297,7 @@ function strainRgb(strain: number): [number, number, number] {
 const strainCss = (strain: number) => `rgb(${strainRgb(strain).map((v) => Math.round(255 * v)).join(',')})`;
 
 // Cloth simulations take seconds, so they run only when asked for and are kept until the panel's shape changes.
-const clothCache = new Map<string, ClothResult>();
+const clothCache = new Map<string, ClothPatternResult>();
 let simulateNow = false;
 const signature = (...arrays: ArrayLike<number>[]) => arrays.map((a) => { let h = 0; for (let i = 0; i < a.length; i++) h = (Math.imul(h, 31) + Math.round(a[i] * 1e4)) | 0; return `${a.length}:${h}`; }).join('/');
 const clothOn = () => ($<HTMLInputElement>('cloth-on')).checked;
@@ -359,14 +359,15 @@ function refreshPanels() {
     const clothKey = clothOn() ? signature(d.draped.positions, flat.uv) : '';
     let cloth = clothCache.get(clothKey);
     if (clothOn() && !cloth && simulateNow) {
-      cloth = drapeCloth(d.draped, flat.uv, bodyField(), { targets: d.draped.positions, iterations: 1500, borderWeight: 0.1 });
+      cloth = clothPattern(d.draped, flat.uv, bodyField());
       if (clothCache.size >= 30) clothCache.clear();
       clothCache.set(clothKey, cloth);
     }
     const clothStale = clothOn() && !cloth;
     const shape = cloth ? cloth.mesh : d.draped;
     const gap = cloth ? cloth.gap : d.gap;
-    const strain = cloth ?? flat;
+    const strain = cloth ?? flat; // the stretch between the 3D shape shown and the pattern drawn
+    const pat = cloth ?? flat; // the pattern: the cloth's own flattening when simulated
     const tooCurved = strain.worstStrain > FLATTEN_TOLERANCE;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.positions), 3));
@@ -379,11 +380,11 @@ function refreshPanels() {
     }
     panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: byLift || tooCurved ? 0xffffff : color, vertexColors: byLift || tooCurved, transparent: true, opacity: byLift ? 0.9 : 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
     const ox = x; // where this panel starts in the flat view
-    const xs = d.loop.map((v) => flat.uv[2 * v]);
-    const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
+    const xs = d.loop.map((v) => pat.uv[2 * v]);
+    const ys = d.loop.map((v) => pat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    outlines.push(d.loop.map((v) => [flat.uv[2 * v], flat.uv[2 * v + 1]] as [number, number]));
-    const at = (v: number) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`;
+    outlines.push(d.loop.map((v) => [pat.uv[2 * v], pat.uv[2 * v + 1]] as [number, number]));
+    const at = (v: number) => `${(pat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - pat.uv[2 * v + 1]).toFixed(2)}`;
     if (tooCurved) { // the flat piece too, coloured by stretch, with a red outline: this one is not a valid pattern piece
       const tri = d.sub.mesh.triangles;
       for (let t = 0; t < tri.length; t += 3) {
@@ -397,7 +398,7 @@ function refreshPanels() {
     x += x1 - x0 + 4;
     top = Math.max(top, y1 - y0);
     const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
-    const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(flat.uv[2 * a] - flat.uv[2 * b], flat.uv[2 * a + 1] - flat.uv[2 * b + 1]); }, 0);
+    const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(pat.uv[2 * a] - pat.uv[2 * b], pat.uv[2 * a + 1] - pat.uv[2 * b + 1]); }, 0);
     const drapedLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(...[0, 1, 2].map((c) => shape.positions[3 * a + c] - shape.positions[3 * b + c]) as [number, number, number]); }, 0);
     const sides: string[] = [];
     for (const e of d.edges) {
@@ -405,12 +406,12 @@ function refreshPanels() {
       const others = (panelsOfSeam.get(e.seam) ?? []).filter((j) => j !== i).map((j) => j + 1);
       sides.push(`Seam ${e.seam + 1}: ${drapedLength(e.vertices).toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
       const mid = subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!;
-      labels.push(`<text x="${(flat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - flat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
+      labels.push(`<text x="${(pat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - pat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
     }
     const verdict = tooCurved
       ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * strain.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
       : `<span class="ok">Lies flat (worst stretch ${(100 * strain.worstStrain).toFixed(1)}%).</span>`;
-    const warn = flat.flippedTriangles > 0 ? ` <span class="bad">${flat.flippedTriangles} flipped triangles</span>` : '';
+    const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
     rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}</span>${verdict}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
   $('panels').innerHTML = rows.join('');

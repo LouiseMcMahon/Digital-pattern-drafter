@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SurfaceField } from './bodyField';
-import { drapeCloth } from './cloth';
+import { clothPattern, drapeCloth } from './cloth';
 import type { Mesh } from './mesh';
 
 /** A rectangle [-hx, hx] x [-hy, hy] with nx x ny cells; positions from place(u, v), flat pattern coordinates (u, v). */
@@ -100,5 +100,34 @@ describe('drapeCloth', () => {
     };
     expect(run(150)).toBeLessThan(0.02);
     expect(run(900)).toBeLessThan(0.02);
+  });
+});
+
+describe('clothPattern', () => {
+  const R = 5;
+  const tube: Mesh = sheet(Math.PI, 20, 48, 20, (a, y) => [R * Math.sin(a), y, R * Math.cos(a)]).mesh;
+  const Rc = R + 0.05;
+  const wrapped = (u: number, v: number): [number, number, number] => [Rc * Math.sin(u / Rc), v, Rc * Math.cos(u / Rc)];
+
+  it('wraps a strip round a cylinder and hands back a pattern that needs next to no stretch', () => {
+    const body = new SurfaceField(tube, 2);
+    const s = sheet(6, 8, 20, 16, (u, v) => wrapped(u, v));
+    const flatStart = sheet(6, 8, 20, 16, (u, v) => [u, v, R + 2]); // starts flat above the cylinder
+    const r = clothPattern(flatStart.mesh, s.flat, body, { targets: Float64Array.from(s.mesh.positions), iterations: 1500 });
+    expect(r.worstStrain).toBeLessThan(0.01);
+    expect(r.flippedTriangles).toBe(0);
+    expect(r.maxSeamError).toBeLessThan(0.5);
+    const xs = Array.from({ length: r.uv.length / 2 }, (_, i) => r.uv[2 * i]);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(12, 0); // the pattern is as wide as the strip was cut
+  });
+
+  it('runs with one round or several, each leaving little stretch', () => {
+    const body = new SurfaceField(plane(20, bump(0, 0, 2, 2)), 2);
+    const run = (rounds: number) => {
+      const s = sheet(5, 5, 10, 10, (u, v) => [u, v, 2.5]);
+      return clothPattern(s.mesh, s.flat, body, { rounds, iterations: 600, targets: Float64Array.from(s.mesh.positions, (p, k) => (k % 3 === 2 ? 0.3 : p)) }).worstStrain;
+    };
+    expect(run(1)).toBeLessThan(0.05);
+    expect(run(3)).toBeLessThan(0.05);
   });
 });
