@@ -17,31 +17,49 @@ const controls = document.getElementById('controls')!;
 const threeEl = document.getElementById('three')!;
 
 controls.innerHTML = `
-  <h3 style="margin:0">Body from measurements</h3>
-  <p style="margin:4px 0 8px;color:#555">Enter any sewing measurements (cm). Blank ones are left to a typical body.</p>
-  <label>Starting body <select id="preset"><option value="female">Woman</option><option value="male">Man</option></select></label><br>
-  <label>Example <select id="fixture"><option value="">(choose)</option>${Object.entries(FIXTURES).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join('')}</select></label>
-  <table id="table"><thead><tr><th>Measurement</th><th>Target</th><th>Body</th><th>Diff</th></tr></thead><tbody>
-  ${MEASUREMENT_NAMES.map((n) => `<tr><td>${MEASUREMENT_LABELS[n]}</td><td><input type="number" step="0.5" id="in-${n}"></td><td id="got-${n}"></td><td id="err-${n}"></td></tr>`).join('')}
-  </tbody></table>
-  <button id="fit">Fit body</button> <button id="reset">Reset</button>
-  <div style="margin-top:6px">View: <button data-view="front">Front</button> <button data-view="side">Side</button> <button data-view="back">Back</button> <button data-view="three">3/4</button> <button data-view="torso">Torso</button></div>
-  <label><input type="checkbox" id="lines"> show where each ring is measured</label>
-  <h4>Seams</h4>
-  <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green), to the bust, waist and hip lines and where they cross the centre front, centre back and sides (teal), and to other seams; a label shows what a click will snap to.</label><br>
-  <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror last seam</button> <button id="seam-clear">Clear all</button>
-  <h4>Panels</h4>
-  <button id="panel-pick">Make a panel: click inside seams</button> <button id="panel-clear">Clear panels</button>
-  <div id="panels" style="margin-top:4px"></div>
-  <svg id="flat" width="340" height="1" style="margin-top:4px;background:#fff;border:1px solid #ccc;display:none"></svg>
-  <div id="hover" style="position:fixed;display:none;pointer-events:none;z-index:10;background:#fffbe0;border:1px solid #bba;padding:1px 5px;font-size:12px;border-radius:3px"></div>
-  <div id="snap" style="margin-top:4px;color:#555;min-height:1.2em"></div>
-  <div id="seams" style="margin-top:4px"></div>
+  <div class="head"><h1>Digital Pattern Drafter</h1><p>Shape a body, draw seams, flatten panels.</p></div>
+  <details open><summary>1 · Body</summary><div class="body">
+    <div class="row">
+      <select id="preset" class="grow" title="Starting body"><option value="female">Woman</option><option value="male">Man</option></select>
+      <select id="fixture" class="grow" title="Load an example set of measurements"><option value="">Example…</option>${Object.entries(FIXTURES).map(([k, f]) => `<option value="${k}">${f.label}</option>`).join('')}</select>
+    </div>
+    <p class="hint">Enter any measurements in cm. Blanks are left to a typical body.</p>
+    <table id="table"><thead><tr><th>Measurement</th><th>Target</th><th>Body</th><th>Diff</th></tr></thead><tbody>
+    ${MEASUREMENT_NAMES.map((n) => `<tr><td>${MEASUREMENT_LABELS[n]}</td><td><input type="number" step="0.5" id="in-${n}"></td><td id="got-${n}"></td><td id="err-${n}"></td></tr>`).join('')}
+    </tbody></table>
+    <div class="row"><button id="fit" class="primary grow">Fit body</button><button id="reset">Reset</button></div>
+    <label class="switch"><input type="checkbox" id="lines"><span>Show where each ring is measured</span></label>
+  </div></details>
+  <details open><summary>2 · Seams</summary><div class="body">
+    <label class="switch" title="Click the body to add points, drag a point to move it, shift-click a point to delete it. Click the first point to close the seam. Points snap to landmarks (green), the bust, waist and hip lines (teal) and other seams; a label shows what a click will snap to."><input type="checkbox" id="draw"><span><b>Draw seams</b><br><span class="hint">Click to add points · drag to move · shift-click to delete · click the first point to close</span></span></label>
+    <div class="row">
+      <button id="seam-undo" title="Remove the last point">Undo</button>
+      <button id="seam-close" title="Join the last point back to the first">Close</button>
+      <button id="seam-new" title="Finish this seam and start another">New seam</button>
+      <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror</button>
+      <button id="seam-clear" class="danger">Clear</button>
+    </div>
+    <div id="seams"></div>
+  </div></details>
+  <details open><summary>3 · Panels</summary><div class="body">
+    <div class="row"><button id="panel-pick" class="grow" title="Then click inside a closed set of seams">Make a panel</button><button id="panel-clear" class="danger">Clear</button></div>
+    <div id="panels"></div>
+    <svg id="flat" width="312" height="1" style="display:none"></svg>
+  </div></details>
   <div id="status">Loading body model…</div>`;
+const viewbar = document.createElement('div');
+viewbar.className = 'viewbar';
+viewbar.innerHTML = '<button data-view="front">Front</button><button data-view="side">Side</button><button data-view="back">Back</button><button data-view="three">3/4</button><button data-view="torso">Torso</button>';
+const hoverEl = document.createElement('div');
+hoverEl.id = 'hover';
+const snapEl = document.createElement('div');
+snapEl.id = 'snap';
+threeEl.append(viewbar, snapEl);
+document.body.append(hoverEl);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
 // Nothing can be used before the body model has loaded: the handlers below all need it.
-const setControlsEnabled = (on: boolean) => controls.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach((el) => { el.disabled = !on; });
+const setControlsEnabled = (on: boolean) => document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('aside input, aside select, aside button, .viewbar button').forEach((el) => { el.disabled = !on; });
 setControlsEnabled(false);
 
 // 3D view
@@ -97,7 +115,7 @@ function setView(name: string) {
   orbit.update();
   render();
 }
-document.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
+viewbar.querySelectorAll<HTMLButtonElement>('[data-view]').forEach((b) => (b.onclick = () => setView(b.dataset.view!)));
 (window as unknown as { setView: typeof setView }).setView = setView;
 
 let body: BodyModel;
@@ -204,9 +222,9 @@ function drawSeams() {
       dot.position.set(...pointOnSurface(m, p));
       seamGroup.add(dot);
     }
-    rows.push(`<label><input type="checkbox" data-merge="${i}"${mergeSel.has(i) ? ' checked' : ''}${seam.closed || seam.points.length < 2 ? ' disabled' : ''}> Seam ${i + 1}${active ? ' (drawing)' : ''}: ${seam.points.length} points${seam.closed ? ', closed' : ''}, ${polylineLength(path).toFixed(1)} cm</label>`);
+    rows.push(`<label class="item-head" style="padding:2px 0"><input type="checkbox" data-merge="${i}" title="Tick two open seams to merge them"${mergeSel.has(i) ? ' checked' : ''}${seam.closed || seam.points.length < 2 ? ' disabled' : ''}><span style="width:9px;height:9px;border-radius:50%;background:${active ? '#d01040' : '#1060ff'}"></span><span style="flex:1">Seam ${i + 1}${active ? ' (drawing)' : ''}: ${seam.points.length} points${seam.closed ? ', closed' : ''}, ${polylineLength(path).toFixed(1)} cm</span></label>`);
   });
-  $('seams').innerHTML = rows.length ? `${rows.join('<br>')}<br><button id="seam-merge" title="Join the two ticked open seams into one, end to end">Merge ticked seams</button>` : '<span style="color:#555">No seams yet.</span>';
+  $('seams').innerHTML = rows.length ? `${rows.join('')}<button id="seam-merge" style="margin-top:4px" title="Join the two ticked open seams into one, end to end">Merge ticked seams</button>` : '<span class="hint">No seams yet. Switch on Draw seams, then click the body.</span>';
   $('seams').querySelectorAll<HTMLInputElement>('input[data-merge]').forEach((el) => {
     el.onchange = () => { const i = Number(el.dataset.merge); if (el.checked) mergeSel.add(i); else mergeSel.delete(i); updateMergeButton(); };
   });
@@ -281,7 +299,7 @@ function refreshPanels() {
   for (const c of [...panelGroup.children]) { panelGroup.remove(c); disposeTree(c); }
   const svg = $<SVGSVGElement & HTMLElement>('flat');
   const rows: string[] = [];
-  if (panels.length === 0) { $('panels').innerHTML = '<span style="color:#555">No panels yet.</span>'; svg.style.display = 'none'; render(); return; }
+  if (panels.length === 0) { $('panels').innerHTML = '<span class="hint">No panels yet. Close some seams, press Make a panel, then click inside them.</span>'; svg.style.display = 'none'; render(); return; }
   const shapes: string[] = [];
   const labels: string[] = [];
   outlines = [];
@@ -294,14 +312,14 @@ function refreshPanels() {
   derived.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
-    const ease = `<label>Panel ${i + 1} ease % across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal" style="width:48px"></label> <label>down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical" style="width:48px"></label> <button data-delete-panel="${i}">Remove</button>`;
-    if (!d.sub) { rows.push(`<span style="color:#c00">${ease}<br>${d.error}</span>`); return; }
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
+    if (!d.sub) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     let flat: ReturnType<typeof flatten>;
     try {
       flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
     } catch (err) {
       console.error(err);
-      rows.push(`<span style="color:#c00">${ease}<br>This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.</span>`);
+      rows.push(`<div class="item error">${ease}<span class="bad">This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.</span></div>`);
       return;
     }
     const tooCurved = flat.worstStrain > FLATTEN_TOLERANCE;
@@ -343,16 +361,16 @@ function refreshPanels() {
       labels.push(`<text x="${(flat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - flat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
     }
     const verdict = tooCurved
-      ? `<span style="color:#c00"><b>This piece cannot lie flat.</b> It would have to stretch or squeeze by up to ${(100 * flat.worstStrain).toFixed(1)}% (the limit is ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span><br>`
-      : `<span style="color:#080">Lies flat (worst stretch ${(100 * flat.worstStrain).toFixed(1)}%).</span><br>`;
-    const warn = flat.flippedTriangles > 0 ? ` <span style="color:#c00">${flat.flippedTriangles} flipped triangles</span>` : '';
-    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${warn}<br>${verdict}${sides.join('<br>')}</span>`);
+      ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * flat.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
+      : `<span class="ok">Lies flat (worst stretch ${(100 * flat.worstStrain).toFixed(1)}%).</span>`;
+    const warn = flat.flippedTriangles > 0 ? ` <span class="bad">${flat.flippedTriangles} flipped triangles</span>` : '';
+    rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${warn}</span>${verdict}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
-  $('panels').innerHTML = rows.join('<br>');
+  $('panels').innerHTML = rows.join('');
   svg.style.display = shapes.length ? 'block' : 'none';
   if (shapes.length) {
     svg.setAttribute('viewBox', `-1 -1 ${(x + 2).toFixed(1)} ${(top + 2).toFixed(1)}`);
-    svg.setAttribute('height', String(Math.min(400, Math.max(60, (340 * (top + 2)) / (x + 2)))));
+    svg.setAttribute('height', String(Math.min(400, Math.max(60, (312 * (top + 2)) / (x + 2)))));
     svg.innerHTML = shapes.join('') + labels.join('');
   }
   $('panels').querySelectorAll<HTMLInputElement>('input[data-panel]').forEach((el) => {
@@ -365,7 +383,8 @@ function refreshPanels() {
 }
 $('panel-pick').onclick = () => {
   pickingPanel = !pickingPanel;
-  $('panel-pick').textContent = pickingPanel ? 'Click inside a closed set of seams… (click again to cancel)' : 'Make a panel: click inside seams';
+  $('panel-pick').classList.toggle('active', pickingPanel);
+  $('panel-pick').textContent = pickingPanel ? 'Click inside the seams… (cancel)' : 'Make a panel';
   renderer.domElement.style.cursor = pickingPanel ? 'crosshair' : '';
 };
 $('panel-clear').onclick = () => { panels = []; refreshPanels(); };
@@ -536,7 +555,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (pickingPanel) {
     panels.push({ seed: hit.surface, horizontal: 0, vertical: 0 });
     pickingPanel = false;
-    $('panel-pick').textContent = 'Make a panel: click inside seams';
+    $('panel-pick').textContent = 'Make a panel';
+    $('panel-pick').classList.remove('active');
     renderer.domElement.style.cursor = '';
     refreshPanels();
     return;
