@@ -43,12 +43,12 @@ describe('GUIDE_RINGS', () => {
   });
 });
 
-/** A closed elliptical tube (half-width a, half-depth b, centred at z = 3) from y = 0 to y = 20; no vertex lies on x = 0. */
-function tube(a: number, b: number, cols = 64) {
+/** A closed elliptical tube (half-width a, half-depth b, centred at z = 3, leaning forward by `lean` cm per cm of height) from y = 0 to y = 20; no vertex lies on x = 0. */
+function tube(a: number, b: number, cols = 64, lean = 0) {
   const positions: number[] = [];
-  for (const y of [0, 10, 20]) for (let c = 0; c < cols; c++) { const t = 0.05 + (2 * Math.PI * c) / cols; positions.push(a * Math.cos(t), y, 3 + b * Math.sin(t)); }
+  for (const y of [0, 10, 20]) for (let c = 0; c < cols; c++) { const t = 0.05 + (2 * Math.PI * c) / cols; positions.push(a * Math.cos(t), y, 3 + b * Math.sin(t) + lean * y); }
   const triangles: number[] = [];
-  for (let r = 0; r < 2; r++) for (let c = 0; c < cols; c++) {
+  for (const r of [1, 0]) for (let c = 0; c < cols; c++) { // top row first, so the samples arrive out of order
     const i = r * cols + c, j = r * cols + ((c + 1) % cols);
     triangles.push(i, i + cols, j, j, i + cols, j + cols);
   }
@@ -87,6 +87,36 @@ describe('centreLines', () => {
     const l = centreLines(both.positions, both.triangles, 2, 15, 18);
     expect(l[0].points[2]).toBeCloseTo(13, 1);
     expect(l[1].points[2]).toBeCloseTo(-7, 1);
+  });
+  it('follows a surface that leans, whatever order the triangles come in', () => {
+    const t = tube(14, 10, 64, 0.5);
+    const [f, b] = centreLines(t.positions, t.triangles, 2, 15, 18);
+    for (let i = 0; i < f.points.length; i += 3) expect(f.points[i + 2]).toBeCloseTo(13 + 0.5 * f.points[i + 1], 1);
+    for (let i = 0; i < b.points.length; i += 3) expect(b.points[i + 2]).toBeCloseTo(-7 + 0.5 * b.points[i + 1], 1);
+    expect(ys(f)).toEqual([...ys(f)].sort((p, q) => p - q));
+    expect(ys(b)).toEqual([...ys(b)].sort((p, q) => p - q));
+  });
+  it('stops each line at its own top, whichever is higher', () => {
+    const [f, b] = centreLines(positions, triangles, 2, 18, 15);
+    expect(ys(f).at(-1)).toBe(18);
+    expect(ys(b).at(-1)).toBe(15);
+  });
+  it('keeps a line that has only two samples', () => {
+    const [f] = centreLines(positions, triangles, 2, 2.5, 2.5);
+    expect(ys(f)).toEqual([2, 2.5]);
+  });
+  it('cuts exactly where an edge crosses the plane, including a vertex that lies on it', () => {
+    // A is on the plane; B is left of it, C right of it. The cut runs from A to the middle of BC.
+    const [f, b] = centreLines([0, 0, 5, -1, 10, 5, 1, 10, 7], [0, 1, 2], 0, 10, 10);
+    for (const l of [f, b]) {
+      expect(l.points.length).toBe(63);
+      for (let i = 0; i < l.points.length; i += 3) expect(l.points[i + 2]).toBeCloseTo(5 + 0.1 * l.points[i + 1], 6);
+    }
+  });
+  it('handles cuts that are level (the same height at both ends)', () => {
+    const [f, b] = centreLines([-1, 5, 0, 1, 5, 4, 1, 5, 8, -1, 5.5, 10, 1, 5.5, 14, 1, 5.5, 18], [0, 1, 2, 3, 4, 5], 0, 10, 10);
+    expect(f.points).toEqual([0, 5, 2, 0, 5.5, 12]);
+    expect(b.points).toEqual([0, 5, 2, 0, 5.5, 12]);
   });
   it('is empty when nothing crosses the centre plane or the range is empty', () => {
     expect(centreLines([5, 0, 0, 6, 0, 0, 5, 10, 0], [0, 1, 2], 0, 10, 10)).toEqual([]);
