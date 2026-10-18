@@ -223,26 +223,6 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   }
   for (let i = 0; i < n; i++) { uv[2 * i] = X[i]; uv[2 * i + 1] = Y[i]; }
 
-  // Holding the border to its true length can fold a thin triangle just inside it. Untangle: move the inside vertices
-  // of any folded triangle toward the average of their neighbours (a Laplacian step keeps a vertex among them).
-  const onBorder = new Uint8Array(n);
-  for (const e of border) { onBorder[e.a] = 1; onBorder[e.b] = 1; }
-  const neighbours: number[][] = Array.from({ length: n }, () => []);
-  for (let k = 0; k < ea.length; k++) { neighbours[ea[k]].push(eb[k]); neighbours[eb[k]].push(ea[k]); }
-  for (let pass = 0; pass < 100; pass++) {
-    const fold = new Set<number>();
-    for (let t = 0; t < nt; t++) {
-      const [a, b, c] = [tri[3 * t], tri[3 * t + 1], tri[3 * t + 2]];
-      if ((uv[2 * b] - uv[2 * a]) * (uv[2 * c + 1] - uv[2 * a + 1]) - (uv[2 * c] - uv[2 * a]) * (uv[2 * b + 1] - uv[2 * a + 1]) < 0) for (const v of [a, b, c]) if (!onBorder[v]) fold.add(v);
-    }
-    if (fold.size === 0) break;
-    for (const v of fold) {
-      const ns = neighbours[v];
-      uv[2 * v] = ns.reduce((s, q) => s + uv[2 * q], 0) / ns.length;
-      uv[2 * v + 1] = ns.reduce((s, q) => s + uv[2 * q + 1], 0) / ns.length;
-    }
-  }
-
   // Length-weighted, so a handful of very short edges (a seam passing close to a vertex) cannot dominate the figure.
   let se = 0;
   let tt = 0;
@@ -284,7 +264,7 @@ function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
  * triangle is not counted: holding a seam to its true length on a curved surface can leave a sliver on the border
  * folded by a tenth of a millimetre, which does not change the panel.
  */
-function countFlips(mesh: Mesh, uv: Float64Array): number {
+export function countFlips(mesh: Mesh, uv: Float64Array): number {
   const areas: number[] = [];
   for (let t = 0; t < triangleCount(mesh); t++) {
     const [a, b, c] = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];

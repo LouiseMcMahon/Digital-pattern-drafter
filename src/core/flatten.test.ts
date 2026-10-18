@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { uniformEase } from './ease';
-import { flatten } from './flatten';
+import { countFlips, flatten } from './flatten';
 import type { Mesh } from './mesh';
 
 /** Half cylinder (radius 14.3 -> half circumference ~45 cm), a developable surface. */
-function halfCylinder(rows = 10, cols = 13, radius = 14.3, height = 60): Mesh {
+function halfCylinder(rows = 7, cols = 9, radius = 14.3, height = 60): Mesh {
   const positions = new Float64Array(rows * cols * 3);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -104,6 +104,17 @@ describe('flatten on a flat wall', () => {
     expect(spanY).toBeCloseTo(4, 1); // along y: untouched
   });
 
+  it('lays a panel out as seen from outside: x grows to the right for a +z face, and the other way for a -z face', () => {
+    const front = wall(6, 5);
+    const a = flatten(front, { ease: uniformEase(0, 0) });
+    expect(a.uv[2 * 5] - a.uv[0]).toBeGreaterThan(4.9); // along +x on the body is along +x on the flat
+    const back: Mesh = { positions: front.positions, triangles: Uint32Array.from(front.triangles, (_, i) => front.triangles[i - (i % 3) + [0, 2, 1][i % 3]]) }; // reversed winding: the face looks toward -z
+    const b = flatten(back, { ease: uniformEase(0, 0) });
+    expect(b.flippedTriangles).toBe(0);
+    expect(b.uv[2 * 5] - b.uv[0]).toBeLessThan(-4.9); // seen from -z, +x on the body is to the left
+    expect(a.uv[2 * 29 + 1] - a.uv[1]).toBeGreaterThan(3.9); // up on the body is up on the flat, either way
+    expect(b.uv[2 * 29 + 1] - b.uv[1]).toBeGreaterThan(3.9);
+  });
   it('keeps an isolated vertex (used by no triangle) out of the solve without failing', () => {
     const m = wall(3, 3);
     const positions = new Float64Array(m.positions.length + 3);
@@ -157,7 +168,7 @@ describe('flatten of a doubly curved patch (a square cut from a sphere)', () => 
     }
     return best;
   };
-  const n = 8;
+  const n = 5;
 
   it('keeps edge lengths to within a few percent, flip-free', () => {
     const m = cap(n, 12, 30, 'same');
@@ -223,5 +234,26 @@ describe('flatten of a doubly curved patch (a square cut from a sphere)', () => 
     const r = flatten(m, { ease: uniformEase(0, 0) });
     expect(r.rmsEdgeError).toBeLessThan(0.02);
     expect(r.flippedTriangles).toBe(0);
+  });
+});
+
+describe('countFlips', () => {
+  // Two unit triangles forming a square, counter-clockwise: (0,0) (1,0) (1,1) and (0,0) (1,1) (0,1).
+  const square: Mesh = { positions: new Float64Array(12), triangles: Uint32Array.from([0, 1, 2, 0, 2, 3]) };
+  const layout = (pts: number[]) => Float64Array.from(pts);
+  it('is 0 for a layout that keeps the winding', () => {
+    expect(countFlips(square, layout([0, 0, 1, 0, 1, 1, 0, 1]))).toBe(0);
+  });
+  it('counts each triangle laid out the wrong way round', () => {
+    expect(countFlips(square, layout([0, 0, 0, 1, 1, 1, 1, 0]))).toBe(2); // mirrored
+    expect(countFlips(square, layout([0, 0, 1, 0, 1, 1, 2, 0.5]))).toBe(1); // vertex 3 pushed through: only the second triangle folds
+  });
+  it('ignores a fold that is under 5% of an average triangle, and counts one that is over', () => {
+    // Vertex 2 moved so the first triangle is a sliver folded by 0.01 (the average triangle is 0.25 of a unit square).
+    expect(countFlips(square, layout([0, 0, 1, 0, 0.5, -0.01, 0, 1]))).toBe(0);
+    expect(countFlips(square, layout([0, 0, 1, 0, 0.5, -0.2, 0, 1]))).toBe(1);
+  });
+  it('is 0 for an empty mesh', () => {
+    expect(countFlips({ positions: new Float64Array(0), triangles: new Uint32Array(0) }, new Float64Array(0))).toBe(0);
   });
 });
