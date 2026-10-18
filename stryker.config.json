@@ -27,5 +27,13 @@
   "commandRunner": {
     "command": "node node_modules/vitest/vitest.mjs run --config vitest.mutation.config.ts --reporter=dot --bail=1"
   },
-  "timeoutFactor": 0.25
+  "timeoutFactor": 0.25,
+  "ignorePatterns": [
+    ".stryker-tmp",
+    "reports",
+    "e2e-out",
+    "dist",
+    "coverage",
+    ".vitest"
+  ]
 }
