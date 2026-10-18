@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
+import { GUIDE_RINGS, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -27,12 +28,13 @@ controls.innerHTML = `
   <div style="margin-top:6px">View: <button data-view="front">Front</button> <button data-view="side">Side</button> <button data-view="back">Back</button> <button data-view="three">3/4</button> <button data-view="torso">Torso</button></div>
   <label><input type="checkbox" id="lines"> show where each ring is measured</label>
   <h4>Seams</h4>
-  <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green) and to the ends of other seams.</label><br>
+  <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green), to the bust, waist and hip lines and where they cross the centre front, centre back and sides (teal), and to other seams; a label shows what a click will snap to.</label><br>
   <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror last seam</button> <button id="seam-clear">Clear all</button>
   <h4>Panels</h4>
   <button id="panel-pick">Make a panel: click inside seams</button> <button id="panel-clear">Clear panels</button>
   <div id="panels" style="margin-top:4px"></div>
   <svg id="flat" width="340" height="1" style="margin-top:4px;background:#fff;border:1px solid #ccc;display:none"></svg>
+  <div id="hover" style="position:fixed;display:none;pointer-events:none;z-index:10;background:#fffbe0;border:1px solid #bba;padding:1px 5px;font-size:12px;border-radius:3px"></div>
   <div id="snap" style="margin-top:4px;color:#555;min-height:1.2em"></div>
   <div id="seams" style="margin-top:4px"></div>
   <div id="status">Loading body model…</div>`;
@@ -107,6 +109,9 @@ let graph: SurfaceGraph;
 let seams: Seam[] = [];
 // Named places the seam points snap to (neck and shoulder points, bust apex, ...), re-found on every body.
 let landmarks: SnapTarget[] = [];
+// Guide lines (the bust, waist, hip... lines round the body) and the points where they cross centre front, centre back and the sides.
+let guides: { name: string; points: number[] }[] = [];
+let ringTargets: SnapTarget[] = [];
 // The path of every leg of every seam (control point to control point), for snapping to the middle of a seam.
 let seamLegs: number[][][] = [];
 
@@ -159,6 +164,14 @@ function show(params: BodyParams) {
   const info = measurer.inspect(shape);
   const m = info.values;
   landmarks = info.marks.filter((k) => !k.name.startsWith('crease')).map((k) => ({ name: k.name, point: k.point }));
+  guides = [];
+  ringTargets = [];
+  for (const g of GUIDE_RINGS) {
+    const ring = info.rings.find((r) => r.name === g.measurement);
+    if (!ring || ring.points.length < 9) continue;
+    guides.push({ name: `${g.label} line`, points: [...ring.points, ring.points[0], ring.points[1], ring.points[2]] });
+    ringTargets.push(...ringLandmarks(g.label, ring.points));
+  }
   drawLines($<HTMLInputElement>('lines').checked ? info : undefined);
   drawLandmarks();
   drawSeams();
@@ -320,13 +333,22 @@ $('panel-clear').onclick = () => { panels = []; refreshPanels(); };
 function drawLandmarks() {
   for (const c of [...landmarkGroup.children]) { landmarkGroup.remove(c); disposeTree(c); }
   if (!$<HTMLInputElement>('draw').checked) return;
-  for (const l of landmarks) {
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0x10a040 }));
-    dot.position.set(...l.point);
-    landmarkGroup.add(dot);
+  for (const g of guides) { // the lines a seam is usually drawn through, faint, with the places they cross the body's centre lines and sides
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(g.points), 3));
+    landmarkGroup.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x1b9aaa, transparent: true, opacity: 0.55 })));
+  }
+  const dots: [SnapTarget[], number, number][] = [[ringTargets, 0x1b9aaa, 0.4], [landmarks, 0x10a040, 0.55]];
+  for (const [list, color, size] of dots) {
+    for (const l of list) {
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(size), new THREE.MeshBasicMaterial({ color }));
+      dot.position.set(...l.point);
+      landmarkGroup.add(dot);
+    }
   }
 }
-$('draw').onchange = () => { drawLandmarks(); render(); };
+$('draw').onchange = () => { drawLandmarks(); $('hover').style.display = 'none'; render(); };
+renderer.domElement.addEventListener('pointerleave', () => { $('hover').style.display = 'none'; });
 
 const ndc = (e: PointerEvent) => {
   const rect = renderer.domElement.getBoundingClientRect();
@@ -349,7 +371,7 @@ const drawing = () => $<HTMLInputElement>('draw').checked && !!body && !pickingP
 /** Snap targets for a new or moved point: the landmarks, and every other seam point (so seams can meet). */
 function targets(skip?: { seam: number; index: number }): SnapTarget[] {
   const m = bodyMesh();
-  const out = [...landmarks];
+  const out = [...landmarks, ...ringTargets];
   seams.forEach((seam, si) => seam.points.forEach((p, i) => {
     if (!(skip && skip.seam === si && skip.index === i)) out.push({ name: `seam ${si + 1} point ${i + 1}`, point: pointOnSurface(m, p) });
   }));
@@ -360,6 +382,8 @@ function targets(skip?: { seam: number; index: number }): SnapTarget[] {
  * (Distance in space is the wrong test: a landmark on a steep part of the body, like the neck point, is a
  * centimetre or more away in depth from a click a few pixels off it.)
  */
+/** The guide lines in the shape nearestOnSeams takes: one "seam" per line, one leg each. */
+const guideLegs = () => guides.map((g) => [g.points]);
 function snapAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>, skip?: { seam: number; index: number }) {
   const rect = renderer.domElement.getBoundingClientRect();
   const onScreen = (p: [number, number, number]) => {
@@ -376,6 +400,8 @@ function snapAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>, skip
   const own = skip ? skip.seam : activeSeam() && !activeSeam().closed ? seams.length - 1 : -1;
   const along = nearestOnSeams(seamLegs, onScreen, SNAP_PIXELS, own);
   if (along) return { point: closestSurfacePoint(mesh, along.at) as SurfacePoint, target: `seam ${along.seam + 1}`, junction: { seam: along.seam, leg: along.leg, at: along.at } };
+  const guide = nearestOnSeams(guideLegs(), onScreen, SNAP_PIXELS);
+  if (guide) return { point: closestSurfacePoint(mesh, guide.at) as SurfacePoint, target: guides[guide.seam].name, junction: undefined };
   return { point: snapToVertex(mesh, hit.surface, SNAP_PIXELS * pixelCm(hit.at)), target: undefined, junction: undefined };
 }
 /** The control point under the pointer, measured on screen like snapping is. */
@@ -426,6 +452,12 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     return;
   }
   renderer.domElement.style.cursor = hit && grabAt(e, hit) ? 'grab' : '';
+  // Say what a click here would snap to.
+  const label = $('hover');
+  const target = hit && !grabAt(e, hit) ? snapAt(e, hit).target : undefined;
+  label.textContent = target ?? '';
+  label.style.display = target ? 'block' : 'none';
+  if (target) { label.style.left = `${e.clientX + 14}px`; label.style.top = `${e.clientY + 12}px`; }
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (dragging) {
@@ -518,6 +550,15 @@ const placeSpec = (spec: PointSpec): SurfacePoint => {
     remaining -= l;
   }
   return poly.slice(-3);
+};
+(window as unknown as Record<string, unknown>).guideTargets = () => ringTargets.map((t) => ({ name: t.name, point: t.point }));
+(window as unknown as Record<string, unknown>).guidePoint = (name: string, fraction: number) => {
+  const g = guides.find((q) => q.name === name);
+  if (!g) return undefined;
+  const n = g.points.length / 3 - 1;
+  const i = Math.min(n - 1, Math.floor(fraction * n));
+  const t = fraction * n - i;
+  return [0, 1, 2].map((k) => g.points[3 * i + k] + t * (g.points[3 * (i + 1) + k] - g.points[3 * i + k]));
 };
 (window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
 $('seam-undo').onclick = () => {

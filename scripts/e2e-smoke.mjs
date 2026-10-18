@@ -235,6 +235,30 @@ try {
   if (joined.length !== 2 || joined[0].points.length !== 3 || joined[1].points.length !== 2) fail(`expected the first seam to gain a control point and a second seam of two points: ${JSON.stringify(joined.map((q) => q.points.length))}`);
   const shared = joined[0].points[1].map((v, i) => v - joined[1].points[0][i]);
   if (Math.hypot(...shared) > 1e-6) fail('the new seam does not start exactly on the first seam');
+
+  // Guide lines: the waist (and bust, hip...) line and where it crosses centre front, the sides and centre back are
+  // offered as snap targets, and a label says what a click would snap to.
+  await page.click('#seam-clear');
+  await page.evaluate(() => window.setView('front'));
+  await page.waitForTimeout(300);
+  const guideNames = (await page.evaluate(() => window.guideTargets())).map((t) => t.name);
+  for (const want of ['waist line, centre front', 'bust line, centre front', 'hip line, left side', 'waist line, centre back']) if (!guideNames.includes(want)) fail(`no snap target "${want}" among ${guideNames.join(', ')}`);
+  const waistFront = (await page.evaluate(() => window.guideTargets())).find((t) => t.name === 'waist line, centre front').point;
+  const wfScreen = await page.evaluate((p) => window.screenOfPoint(p), waistFront);
+  await page.mouse.move(wfScreen.x + 2, wfScreen.y + 2);
+  await page.waitForTimeout(100);
+  const hoverText = await page.$eval('#hover', (e) => (getComputedStyle(e).display === 'none' ? '' : e.textContent));
+  if (hoverText !== 'waist line, centre front') fail(`hovering the waist at centre front showed "${hoverText}"`);
+  await page.mouse.click(wfScreen.x + 2, wfScreen.y + 2);
+  if (!(await snapNote()).includes('waist line, centre front')) fail(`a click at the waist line at centre front did not snap to it: "${await snapNote()}"`);
+  // A point on the waist line between centre front and the side snaps to the line itself.
+  const onLine = await page.evaluate(() => { for (let f = 0; f < 1; f += 0.005) { const p = window.guidePoint('waist line', f); if (p && p[2] > 8 && p[0] > 6 && p[0] < 9) return p; } return undefined; });
+  if (!onLine) fail('found no point on the waist line between centre front and the side');
+  const lineScreen = await page.evaluate((p) => window.screenOfPoint(p), onLine);
+  await page.mouse.click(lineScreen.x + 1, lineScreen.y + 1);
+  if ((await snapNote()) !== 'Snapped to waist line') fail(`a click on the waist line did not snap to it: "${await snapNote()}"`);
+  const drawnPoints = await page.evaluate(() => window.seamState());
+  if (drawnPoints[0].points.length !== 2 || Math.abs(drawnPoints[0].points[1][1] - onLine[1]) > 0.3) fail('the seam point placed on the waist line is not at the waist height');
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,
