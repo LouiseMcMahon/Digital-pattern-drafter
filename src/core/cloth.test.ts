@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SurfaceField } from './bodyField';
-import { clothPattern, clothPatterns, drapeCloth, drapeGarment } from './cloth';
+import { type ClothProgress, clothPattern, clothPatterns, clothPatternsSteps, drapeCloth, drapeGarment } from './cloth';
 import type { Mesh } from './mesh';
 
 /** A rectangle [-hx, hx] x [-hy, hy] with nx x ny cells; positions from place(u, v), flat pattern coordinates (u, v). */
@@ -243,6 +243,42 @@ describe('clothPatterns rounds', () => {
     expect(apart(two, run({ rounds: 2, touchUp: 5 }))).toBeGreaterThan(1e-5); // and how long it runs matters
     expect(apart(two, run({ rounds: 2, touchUpBorder: 0.9 }))).toBeGreaterThan(1e-5); // and so does the border pull it uses
     expect(apart(two, run({ rounds: 2 }))).toBe(0); // the same settings give the same answer
+  });
+});
+
+describe('clothPatternsSteps (progress)', () => {
+  const body = new SurfaceField(plane(20, bump(0, 0, 2, 2), 20), 2);
+  const make = () => {
+    const s = sheet(5, 5, 6, 6, (u, v) => [u, v, 2.5]);
+    return { pieces: [{ mesh: s.mesh, flat: s.flat }], options: { iterations: 40, touchUp: 20, rounds: 3, targets: Float64Array.from(s.mesh.positions, (p, k) => (k % 3 === 2 ? 0.3 : p)) } };
+  };
+
+  it('reports where it is: settling every few iterations, then flattening, round by round, with the share done only ever growing to 1', () => {
+    const { pieces, options } = make();
+    const seen: ClothProgress[] = [];
+    const steps = clothPatternsSteps(pieces, body, options);
+    let step = steps.next();
+    while (!step.done) { seen.push(step.value); step = steps.next(); }
+    expect(seen.length).toBeGreaterThan(6);
+    expect(seen[0]).toMatchObject({ stage: 'settling', round: 1, rounds: 3 });
+    expect(seen[seen.length - 1]).toMatchObject({ stage: 'flattening', round: 3, rounds: 3 });
+    expect(seen[seen.length - 1].fraction).toBeCloseTo(1, 9);
+    for (let i = 1; i < seen.length; i++) expect(seen[i].fraction).toBeGreaterThanOrEqual(seen[i - 1].fraction);
+    expect(seen.every((p) => p.fraction > 0 && p.fraction <= 1)).toBe(true);
+    // one flattening after each of the three rounds, and the settling steps of rounds 2 and 3 are shorter than round 1's
+    expect(seen.filter((p) => p.stage === 'flattening').map((p) => p.round)).toEqual([1, 2, 3]);
+    expect(seen.filter((p) => p.stage === 'settling' && p.round === 1).length).toBeGreaterThan(seen.filter((p) => p.stage === 'settling' && p.round === 2).length);
+    expect(step.value).toHaveLength(1);
+  });
+
+  it('gives the same answer as clothPatterns, which just runs it to the end', () => {
+    const { pieces, options } = make();
+    const direct = clothPatterns(pieces, body, options)[0];
+    const steps = clothPatternsSteps(pieces, body, options);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    expect(Array.from(step.value[0].mesh.positions)).toEqual(Array.from(direct.mesh.positions));
+    expect(step.value[0].worstStrain).toBe(direct.worstStrain);
   });
 });
 

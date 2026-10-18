@@ -58,6 +58,9 @@ export interface GarmentOptions extends ClothOptions {
   seamPull?: number;
 }
 
+/** Iterations between progress reports. */
+const PROGRESS_EVERY = 10;
+
 const mapOf = (p: ClothPiece): ArrayLike<number> => p.vertexMap ?? Array.from({ length: vertexCount(p.mesh) }, (_, i) => i);
 
 /** The pieces' 3D positions gathered by garment vertex (where two pieces share a vertex they agree). */
@@ -150,7 +153,19 @@ export function drapeGarment(pieces: readonly ClothPiece[], body: SurfaceField, 
   return simulate(pieces, buildTopology(pieces, options.bending ?? 0.01, options.seamPull ?? 0), body, options);
 }
 
+/** Run a generator to its end and return what it returns. */
+function finish<T>(steps: Generator<unknown, T>): T {
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
+}
+
 function simulate(pieces: readonly ClothPiece[], top: GarmentTopology, body: SurfaceField, options: GarmentOptions): ClothResult[] {
+  return finish(simulateSteps(pieces, top, body, options));
+}
+
+/** The simulation as a generator: it yields the number of iterations done every few iterations, so a caller can show progress and let a page repaint. */
+function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, body: SurfaceField, options: GarmentOptions): Generator<number, ClothResult[]> {
   const { standoff = 0.05, iterations = 600, tolerance = 1e-4, borderWeight = 0.2, gravity = 0, edgePasses = 8 } = options;
   const { maps, used, a: A, b: B, weight: W, owner, la, lb, edgeCount, pull, pulled } = top;
   const pos = garmentPositions(pieces);
@@ -195,6 +210,7 @@ function simulate(pieces: readonly ClothPiece[], top: GarmentTopology, body: Sur
     }
     ease *= worst < tolerance ? 0.5 : decay;
     if (ease < 0.02) { done++; break; }
+    if (done % PROGRESS_EVERY === PROGRESS_EVERY - 1) yield done + 1;
   }
 
   // Report, piece by piece.
@@ -269,16 +285,50 @@ export interface ClothPatternResult {
  * flattenings use none.
  */
 export function clothPatterns(pieces: readonly ClothPiece[], body: SurfaceField, options: ClothPatternOptions = {}): ClothPatternResult[] {
+  return finish(clothPatternsSteps(pieces, body, options));
+}
+
+/** Where `clothPatternsSteps` has got to. */
+export interface ClothProgress {
+  stage: 'settling' | 'flattening';
+  /** Which round (1 to `rounds`) and how many there are. */
+  round: number;
+  rounds: number;
+  /** 0 to 1 over the whole run (an upper bound: a round that settles early skips ahead). */
+  fraction: number;
+}
+
+/**
+ * `clothPatterns` as a generator: it yields a `ClothProgress` every few iterations and before each flattening, so a page
+ * can show where it is and repaint between steps; its return value is the result.
+ */
+export function* clothPatternsSteps(pieces: readonly ClothPiece[], body: SurfaceField, options: ClothPatternOptions = {}): Generator<ClothProgress, ClothPatternResult[]> {
   const { rounds = 10, touchUp = 60, touchUpBorder = 0.002, ...rest } = options;
   // Every round is drawn toward where the cloth started, not toward the last result.
   const config: GarmentOptions = { iterations: 600, borderWeight: 0.05, edgePasses: 16, targets: garmentPositions(pieces), ...rest };
+  const first = config.iterations ?? 600;
+  const total = first + Math.max(0, rounds - 1) * touchUp; // iterations in the whole run
   const top = buildTopology(pieces, config.bending ?? 0.01, config.seamPull ?? 0); // the same for every round: only the shape and the patterns change
-  let cloths = simulate(pieces, top, body, config);
-  let patterns = cloths.map((c) => flatten(c.mesh, { ease: uniformEase(0, 0) }));
-  for (let round = 1; round < rounds; round++) {
+  let behind = 0; // iterations in the rounds already finished
+  const settle = function* (round: number, current: readonly ClothPiece[], options: GarmentOptions): Generator<ClothProgress, ClothResult[]> {
+    const run = simulateSteps(current, top, body, options);
+    let step = run.next();
+    while (!step.done) {
+      yield { stage: 'settling', round, rounds, fraction: (behind + step.value) / total };
+      step = run.next();
+    }
+    behind += options.iterations ?? 0;
+    return step.value;
+  };
+  const flatten0 = (cloths: ClothResult[]) => cloths.map((c) => flatten(c.mesh, { ease: uniformEase(0, 0) }));
+  let cloths = yield* settle(1, pieces, config);
+  yield { stage: 'flattening', round: 1, rounds, fraction: behind / total };
+  let patterns = flatten0(cloths);
+  for (let round = 2; round <= rounds; round++) {
     const current = pieces.map((p, k) => ({ mesh: cloths[k].mesh, flat: patterns[k].uv, vertexMap: p.vertexMap }));
-    cloths = simulate(current, top, body, { ...config, iterations: touchUp, borderWeight: touchUpBorder });
-    patterns = cloths.map((c) => flatten(c.mesh, { ease: uniformEase(0, 0) }));
+    cloths = yield* settle(round, current, { ...config, iterations: touchUp, borderWeight: touchUpBorder });
+    yield { stage: 'flattening', round, rounds, fraction: behind / total };
+    patterns = flatten0(cloths);
   }
   return cloths.map((c, k) => ({ mesh: c.mesh, uv: patterns[k].uv, worstStrain: patterns[k].worstStrain, vertexStrain: patterns[k].vertexStrain, flippedTriangles: patterns[k].flippedTriangles, gap: c.gap, seamError: c.seamError, maxSeamError: c.maxSeamError }));
 }

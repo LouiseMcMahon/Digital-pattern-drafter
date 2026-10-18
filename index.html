@@ -63,6 +63,10 @@
   .busy.on { display: flex; }
   .busy .spinner { width: 44px; height: 44px; border-radius: 50%; border: 4px solid var(--line); border-top-color: var(--accent); animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .busy .bar { width: min(280px, 70%); height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .busy .bar div { height: 100%; width: 0; background: var(--accent); transition: width 0.15s linear; }
+  #busy-text { font-weight: 600; }
+  #busy-detail { max-width: 340px; padding: 0 16px; text-align: center; color: var(--muted); font-size: 12px; }
   .viewbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,.12); }
   .viewbar button { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 12px; }
   .viewbar button:last-child { border-right: 0; }

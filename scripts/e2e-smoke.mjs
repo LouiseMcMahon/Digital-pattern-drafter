@@ -236,6 +236,11 @@ try {
   });
   if (!started.stale) fail('a cloth view that has not been simulated should say it is out of date');
   if (!started.overlay) fail('the spinner overlay did not show when Simulate cloth was clicked');
+  // The overlay says what is happening: its text and bar move on from the start while the simulation runs.
+  await page.waitForFunction(() => /% done/.test(document.getElementById('busy-detail').textContent ?? '') && document.getElementById('busy-bar').style.width !== '0%', null, { timeout: 120000 })
+    .catch(async () => fail(`the spinner overlay showed no progress: "${await page.$eval('#busy-detail', (e) => e.textContent)}"`));
+  const stages = await page.evaluate(() => document.getElementById('busy-text').textContent);
+  if (!/Laying the panels over the body|Fitting the patterns|Flattening the cloth/.test(stages ?? '')) fail(`unexpected progress text: "${stages}"`);
   await page.waitForFunction(() => !document.querySelector('.busy').classList.contains('on') && document.getElementById('panels').innerText.includes('cloth simulation:'), null, { timeout: 900000 })
     .catch(async () => fail(`the cloth simulation did not finish and report: "${await page.$eval('#panels', (e) => e.innerText)}"`));
   const clothText = await page.$eval('#panels', (e) => e.innerText);

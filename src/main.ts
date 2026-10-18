@@ -4,7 +4,7 @@ import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyMod
 import { GUIDE_RINGS, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { SurfaceField } from './core/bodyField';
-import { type ClothPatternResult, clothPatterns } from './core/cloth';
+import { type ClothPatternResult, type ClothPiece, type ClothProgress, clothPatternsSteps } from './core/cloth';
 import { drape, drapeSeams } from './core/drape';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -66,7 +66,7 @@ const snapEl = document.createElement('div');
 snapEl.id = 'snap';
 const busyEl = document.createElement('div');
 busyEl.className = 'busy';
-busyEl.innerHTML = '<div class="spinner"></div><div id="busy-text">Simulating cloth…</div>';
+busyEl.innerHTML = '<div class="spinner"></div><div id="busy-text">Simulating cloth…</div><div class="bar"><div id="busy-bar"></div></div><div id="busy-detail"></div>';
 threeEl.append(viewbar, snapEl, busyEl);
 document.body.append(hoverEl);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -301,7 +301,8 @@ const strainCss = (strain: number) => `rgb(${strainRgb(strain).map((v) => Math.r
 
 // Cloth simulations take seconds, so they run only when asked for and are kept until the panel's shape changes.
 const clothCache = new Map<string, ClothPatternResult[]>();
-let simulateNow = false;
+/** The panels as they are now, ready to simulate (set each time the panels are drawn); the button runs it. */
+let lastGarment: { key: string; pieces: ClothPiece[]; targets: Float64Array } | undefined;
 // A key for a set of arrays (two independent 32-bit hashes of each, and its length) so a stale simulation is never shown for a changed panel.
 const signature = (...arrays: ArrayLike<number>[]) => arrays.map((a) => { let h1 = 0; let h2 = 2166136261; for (let i = 0; i < a.length; i++) { const x = Math.round(a[i] * 1e4); h1 = (Math.imul(h1, 31) + x) | 0; h2 = Math.imul(h2 ^ x, 16777619); } return `${a.length}:${h1}:${h2}`; }).join('/');
 const clothOn = () => ($<HTMLInputElement>('cloth-on')).checked;
@@ -351,13 +352,9 @@ function refreshPanels() {
     try { return { flat: flatten(d.draped, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) }) }; } catch (err) { console.error(err); return { error: `This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.` }; }
   });
   const flattened = derived.map((_, i) => i).filter((i) => flats[i].flat);
-  const clothKey = clothOn() ? flattened.map((i) => signature(derived[i].draped!.positions, flats[i].flat!.uv, derived[i].sub!.vertexMap)).join('|') : '';
-  let garment = clothCache.get(clothKey);
-  if (clothOn() && !garment && simulateNow && flattened.length) {
-    garment = clothPatterns(flattened.map((i) => ({ mesh: derived[i].draped!, flat: flats[i].flat!.uv, vertexMap: derived[i].sub!.vertexMap })), bodyField(), { targets: derived[flattened[0]].taut!.positions });
-    if (clothCache.size >= 10) clothCache.clear();
-    clothCache.set(clothKey, garment);
-  }
+  const clothKey = flattened.map((i) => signature(derived[i].draped!.positions, flats[i].flat!.uv, derived[i].sub!.vertexMap)).join('|');
+  lastGarment = flattened.length ? { key: clothKey, pieces: flattened.map((i) => ({ mesh: derived[i].draped!, flat: flats[i].flat!.uv, vertexMap: derived[i].sub!.vertexMap })), targets: derived[flattened[0]].taut!.positions } : undefined;
+  const garment = clothOn() ? clothCache.get(clothKey) : undefined; // simulations are run by the button, not here
   derived.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
@@ -447,22 +444,52 @@ $('panel-pick').onclick = () => {
 };
 $('drape-on').onchange = () => refreshPanels();
 $('cloth-on').onchange = () => refreshPanels();
-$('cloth-run').onclick = () => {
+/** What the overlay says for each step of the simulation, in plain words. */
+function describeProgress(p: ClothProgress): { text: string; detail: string } {
+  const percent = Math.round(100 * p.fraction);
+  if (p.stage === 'flattening') return { text: `Flattening the cloth into patterns (round ${p.round} of ${p.rounds})`, detail: `Opening the draped cloth out flat to see what shape each piece should be cut. ${percent}% done.` };
+  return p.round === 1
+    ? { text: 'Laying the panels over the body', detail: `Every edge keeps the length it has on the flat pattern, the cloth cannot go inside the body, and panels sewn together are pulled on at their seams. ${percent}% done.` }
+    : { text: `Fitting the patterns to the cloth (round ${p.round} of ${p.rounds})`, detail: `Settling the cloth again against its new patterns so sewn panels agree along their seams. ${percent}% done.` };
+}
+
+// Paint, then carry on: lets the overlay and its progress show between steps of the simulation.
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+$('cloth-run').onclick = async () => {
   const button = $('cloth-run');
-  if (panels.length === 0) { // nothing to simulate: say so rather than flash the overlay
+  const garment = lastGarment;
+  if (panels.length === 0 || !garment) { // nothing to simulate: say so rather than flash the overlay
     button.textContent = 'Make a panel first';
     setTimeout(() => { button.textContent = 'Simulate cloth (slow)'; }, 2000);
     return;
   }
-  $<HTMLInputElement>('cloth-on').checked = true;
   button.textContent = 'Simulating…';
-  $('busy-text').textContent = `Simulating cloth for ${panels.length} panel${panels.length === 1 ? '' : 's'}…`;
+  $('busy-text').textContent = `Simulating cloth for ${garment.pieces.length} panel${garment.pieces.length === 1 ? '' : 's'}…`;
+  $('busy-detail').textContent = 'Starting.';
+  $('busy-bar').style.width = '0%';
   busyEl.classList.add('on');
-  // The page is busy while it runs, so let the overlay paint first (two frames); the spinner's turn is a transform animation, which keeps going.
-  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
-    simulateNow = true;
-    try { refreshPanels(); } finally { simulateNow = false; button.textContent = 'Simulate cloth (slow)'; busyEl.classList.remove('on'); }
-  }, 0)));
+  try {
+    await nextFrame();
+    // The simulation yields every few iterations: show where it is, and let the page repaint, then go on.
+    const steps = clothPatternsSteps(garment.pieces, bodyField(), { targets: garment.targets });
+    let step = steps.next();
+    while (!step.done) {
+      const { text, detail } = describeProgress(step.value);
+      $('busy-text').textContent = text;
+      $('busy-detail').textContent = detail;
+      $('busy-bar').style.width = `${Math.round(100 * step.value.fraction)}%`;
+      await nextFrame();
+      step = steps.next();
+    }
+    if (clothCache.size >= 10) clothCache.clear();
+    clothCache.set(garment.key, step.value);
+    $<HTMLInputElement>('cloth-on').checked = true;
+    refreshPanels();
+  } finally {
+    button.textContent = 'Simulate cloth (slow)';
+    busyEl.classList.remove('on');
+  }
 };
 $('panel-colour').onchange = () => { $('lift-key').textContent = colourBy() === 'lift' ? 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).' : ''; refreshPanels(); };
 $('lift-key').textContent = 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).';

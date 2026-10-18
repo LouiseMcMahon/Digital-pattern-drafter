@@ -118,7 +118,8 @@ function runModule(name, concurrency, quiet) {
 const cpuCount = cpus().length;
 const jobsArg = args.find((a) => a.startsWith('--jobs='));
 const jobs = Math.max(1, Math.min(names.length, jobsArg ? Number(jobsArg.slice(7)) : names.length > 1 ? Math.min(names.length, cpuCount) : 1));
-const concurrency = Math.max(1, Math.floor(cpuCount / jobs)); // Stryker workers per module: the machine is shared between the jobs
+// Stryker workers per module: the machine is shared between the jobs. MUTATE_WORKERS caps it: with every core busy the tests run slow, mutants that only run slower time out, and a timeout counts as detected, so fewer workers give the honest score.
+const concurrency = process.env.MUTATE_WORKERS ? Math.max(1, Number(process.env.MUTATE_WORKERS)) : Math.max(1, Math.floor(cpuCount / jobs));
 // Slowest first, so the last jobs to start are the short ones.
 const SLOWEST = ['flatten', 'geodesic', 'cut', 'seam', 'bodyModel', 'body', 'lscm', 'pose', 'slice'];
 const queue = [...names].sort((a, b) => (SLOWEST.indexOf(a) + 1 || 99) - (SLOWEST.indexOf(b) + 1 || 99));

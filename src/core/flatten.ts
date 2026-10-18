@@ -250,7 +250,7 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
 }
 
 /** Rotate the layout so +y follows the 3D up axis (centred on its centroid). */
-function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
+export function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
   const n = vertexCount(mesh);
   let mu = 0, mv = 0, mh = 0;
   const hgt = (i: number) => dot(getVertex(mesh, i), up);
