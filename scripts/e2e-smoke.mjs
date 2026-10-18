@@ -170,6 +170,47 @@ try {
   const width = Math.max(...xs) - Math.min(...xs);
   if (!(worst < 0.02 * width)) fail(`the mirrored panel is not symmetric: worst point ${worst.toFixed(2)} cm from its mirror image on a ${width.toFixed(1)} cm wide panel`);
   await page.locator('#flat').screenshot({ path: 'e2e-out/panel-mirrored.png' });
+
+  // Several panels sharing seams: a bodice front and back, cut by neckline, shoulder, armhole, side and hem seams
+  // that meet at shared points. The side and shoulder seams belong to both panels, with the same length on each.
+  await page.click('#seam-clear');
+  await page.click('#panel-clear');
+  const made = await page.evaluate(() => {
+    const lm = Object.fromEntries(window.landmarkPoints().map((l) => [l.name, l.point]));
+    const P = (name) => ({ point: lm[name] });
+    const front = (x, y) => ({ origin: [x, y, 300], dir: [0, 0, -1] });
+    const back = (x, y) => ({ origin: [x, y, -300], dir: [0, 0, 1] });
+    const sideL = { point: [13.5, 105, 3] };
+    const sideR = { point: [-13.5, 105, 3] };
+    const add = (pts) => window.seamFromSpecs(pts, false);
+    add([P('neck point L'), front(0, 148), P('neck point R')]);
+    add([P('neck point L'), back(0, 152), P('neck point R')]);
+    add([P('neck point L'), P('shoulder point L')]);
+    add([P('neck point R'), P('shoulder point R')]);
+    add([P('shoulder point L'), front(17, 141), P('axilla L')]);
+    add([P('shoulder point L'), back(17, 141), P('axilla L')]);
+    add([P('shoulder point R'), front(-17, 141), P('axilla R')]);
+    add([P('shoulder point R'), back(-17, 141), P('axilla R')]);
+    add([P('axilla L'), sideL]);
+    add([P('axilla R'), sideR]);
+    add([sideL, front(8, 105), front(0, 105), front(-8, 105), sideR]);
+    add([sideL, back(8, 105), back(0, 105), back(-8, 105), sideR]);
+    window.panelAtSpec(front(0, 125));
+    window.panelAtSpec(back(0, 125));
+    return document.getElementById('panels').innerText;
+  });
+  const sides = (text) => [...text.matchAll(/Seam (\d+): ([0-9.]+) cm \(flat ([0-9.]+)\)(, shared with panel (\d+))?/g)].map((m) => ({ seam: Number(m[1]), length: Number(m[2]), shared: m[5] ? Number(m[5]) : undefined }));
+  const [frontText, backText] = made.split(/Panel 2/);
+  const [frontSides, backSides] = [sides(frontText), sides(backText)];
+  if (frontSides.length !== 8 || backSides.length !== 8) fail(`expected 8 sides on the front and back panels, got ${frontSides.length} and ${backSides.length}: "${made}"`);
+  const sharedSeams = [3, 4, 9, 10];
+  for (const seam of sharedSeams) {
+    const [a, b] = [frontSides.find((e) => e.seam === seam), backSides.find((e) => e.seam === seam)];
+    if (!a || !b || a.shared !== 2 || b.shared !== 1) fail(`seam ${seam} should be shared by panels 1 and 2: "${made}"`);
+    if (Math.abs(a.length - b.length) > 0.01) fail(`shared seam ${seam} has different lengths on the two panels: ${a.length} and ${b.length}`);
+  }
+  if (frontSides.some((e) => !sharedSeams.includes(e.seam) && e.shared !== undefined)) fail('a seam only one panel touches was reported as shared');
+  await page.locator('#flat').screenshot({ path: 'e2e-out/panels-front-back.png' });
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,

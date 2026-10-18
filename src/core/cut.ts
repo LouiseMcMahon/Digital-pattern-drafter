@@ -1,4 +1,4 @@
-import { type Mesh, type Vec3, cross, dot, getVertex, len, normalize, sub, triangleCount } from './mesh';
+import { type Mesh, type Vec3, boundaryLoops, cross, dot, extractSubmesh, getVertex, len, normalize, sub, triangleCount } from './mesh';
 import { type PathNode, type Seam, type SurfacePoint, SurfaceGraph, closestBary, pointOnSurface } from './seam';
 
 /**
@@ -17,6 +17,8 @@ export interface CutMesh {
   parent: number[];
   /** Mesh edges that lie on a seam, as `min * vertexCount + max`. */
   seamEdges: Set<number>;
+  /** For each seam edge, the seams (indices into the list given to cutMesh) it lies on: one, or more where seams run together. */
+  seamsOfEdge: Map<number, number[]>;
   /** The vertex a seam point became (for tests and display). */
   vertexCount: number;
 }
@@ -102,29 +104,32 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
 
   // Each seam is a chain of nodes; every consecutive pair is a segment inside one triangle (or along one edge).
   const chords = new Map<number, [number, number][]>(); // original triangle -> segments across or into it
-  const alongEdge: { edge: number; u: number; w: number }[] = [];
-  const segment = (u: Resolved, w: Resolved) => {
+  const alongEdge: { edge: number; u: number; w: number; seam: number }[] = [];
+  const chordSeams = new Map<string, number[]>(); // chord (smaller vertex:larger vertex) -> seams
+  const segment = (u: Resolved, w: Resolved, seam: number) => {
     if (u.vertex === w.vertex) return;
     const edgesOf = (r: Resolved): number[] => (r.original !== undefined ? vertexEdges[r.original] : r.edge ? [edgeKey(r.edge[0], r.edge[1])] : []);
     const shared = edgesOf(u).find((e) => edgesOf(w).includes(e));
-    if (shared !== undefined) { alongEdge.push({ edge: shared, u: u.vertex, w: w.vertex }); return; }
+    if (shared !== undefined) { alongEdge.push({ edge: shared, u: u.vertex, w: w.vertex, seam }); return; }
     const trisOf = (r: Resolved): number[] => (r.original !== undefined ? vertexTris[r.original] : r.edge ? edgeTris.get(edgeKey(r.edge[0], r.edge[1]))! : [r.tri!]);
     const tri = trisOf(u).find((t) => trisOf(w).includes(t));
     if (tri === undefined) throw new Error('A seam segment does not lie inside one triangle');
     const list = chords.get(tri) ?? [];
     chords.set(tri, list);
     list.push([u.vertex, w.vertex]);
+    const key = `${Math.min(u.vertex, w.vertex)}:${Math.max(u.vertex, w.vertex)}`;
+    chordSeams.set(key, [...(chordSeams.get(key) ?? []), seam]);
   };
-  for (const seam of seams) {
-    if (seam.points.length < 2) continue;
+  seams.forEach((seam, seamIndex) => {
+    if (seam.points.length < 2) return;
     const pts = seam.closed && seam.points.length > 2 ? [...seam.points, seam.points[0]] : seam.points;
     const nodes: Resolved[] = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const leg = graph.pathNodes(m.positions, pts[i], pts[i + 1]).map(resolve);
       nodes.push(...(i === 0 ? leg : leg.slice(1)));
     }
-    for (let i = 0; i + 1 < nodes.length; i++) segment(nodes[i], nodes[i + 1]);
-  }
+    for (let i = 0; i + 1 < nodes.length; i++) segment(nodes[i], nodes[i + 1], seamIndex);
+  });
 
   // The chain of vertices along each original edge, from the smaller vertex id to the larger.
   const chain = (a: number, b: number): number[] => {
@@ -133,12 +138,12 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
   };
 
   const seamEdges = new Set<number>();
-  const seamList: [number, number][] = [];
+  const seamList: [number, number, number][] = []; // vertex, vertex, seam
   for (const s of alongEdge) {
     const [a, b] = [Math.floor(s.edge / nv), s.edge % nv];
     const c = chain(a, b);
     const [i, j] = [c.indexOf(s.u), c.indexOf(s.w)];
-    for (let k = Math.min(i, j); k < Math.max(i, j); k++) seamList.push([c[k], c[k + 1]]);
+    for (let k = Math.min(i, j); k < Math.max(i, j); k++) seamList.push([c[k], c[k + 1], s.seam]);
   }
 
   // Re-triangulate every triangle that has points on its edges, inside it, or segments across it.
@@ -163,12 +168,19 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
       triangles.push(...tri);
       parent.push(t);
     }
-    for (const s of segs) seamList.push(s);
+    for (const [a, b] of segs) for (const seam of chordSeams.get(`${Math.min(a, b)}:${Math.max(a, b)}`) ?? []) seamList.push([a, b, seam]);
   }
 
   const total = pos.length / 3;
-  for (const [a, b] of seamList) seamEdges.add(Math.min(a, b) * total + Math.max(a, b));
-  return { mesh: { positions: Float64Array.from(pos), triangles: Uint32Array.from(triangles) }, parent, seamEdges, vertexCount: total };
+  const seamsOfEdge = new Map<number, number[]>();
+  for (const [a, b, seam] of seamList) {
+    const key = Math.min(a, b) * total + Math.max(a, b);
+    seamEdges.add(key);
+    const list = seamsOfEdge.get(key) ?? [];
+    if (!list.includes(seam)) list.push(seam);
+    seamsOfEdge.set(key, list);
+  }
+  return { mesh: { positions: Float64Array.from(pos), triangles: Uint32Array.from(triangles) }, parent, seamEdges, seamsOfEdge, vertexCount: total };
 }
 
 /**
@@ -290,3 +302,43 @@ export function triangleArea(m: Mesh, t: number): number {
 export function area(m: Mesh, triangles: readonly number[]): number {
   return triangles.reduce((s, t) => s + triangleArea(m, t), 0);
 }
+
+/** One side of a panel: the run of its boundary that lies along one seam (or along no seam). */
+export interface PanelEdge {
+  /** Index of the seam (in the list given to cutMesh) this run follows; undefined where the border is not a seam. */
+  seam: number | undefined;
+  /** Vertices of the cut mesh along the run, in boundary order (consecutive runs share their end vertices). */
+  vertices: number[];
+  /** Length along the body (cm). */
+  length: number;
+}
+
+/**
+ * The sides of a panel, in order round its outline, each the run of boundary edges that follow one seam.
+ * Returns undefined if the panel does not have exactly one boundary loop (it is not a disc).
+ */
+export function panelEdges(cut: CutMesh, triangles: readonly number[]): PanelEdge[] | undefined {
+  const sub = extractSubmesh(cut.mesh, [...triangles]);
+  const loops = boundaryLoops(sub.mesh);
+  if (loops.length !== 1) return undefined;
+  const loop = loops[0].map((v) => sub.vertexMap[v]);
+  const n = loop.length;
+  const seamOf = (i: number): number | undefined => {
+    const [a, b] = [loop[i], loop[(i + 1) % n]];
+    return cut.seamsOfEdge.get(Math.min(a, b) * cut.vertexCount + Math.max(a, b))?.[0];
+  };
+  const seams = loop.map((_, i) => seamOf(i));
+  // Start where the seam changes, so a run is never split by the start of the loop.
+  let start = seams.findIndex((q, i) => q !== seams[(i + n - 1) % n]);
+  if (start < 0) start = 0;
+  const edges: PanelEdge[] = [];
+  for (let k = 0; k < n; k++) {
+    const i = (start + k) % n;
+    const [a, b] = [loop[i], loop[(i + 1) % n]];
+    const last = edges[edges.length - 1];
+    if (last && last.seam === seams[i]) { last.vertices.push(b); last.length += len(sub3(cut.mesh, a, b)); }
+    else edges.push({ seam: seams[i], vertices: [a, b], length: len(sub3(cut.mesh, a, b)) });
+  }
+  return edges;
+}
+const sub3 = (m: Mesh, a: number, b: number): Vec3 => sub(getVertex(m, a), getVertex(m, b));

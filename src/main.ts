@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
 import { mirrorSeam } from './core/mirror';
-import { area, cutMesh, locateInCut, regionFrom } from './core/cut';
+import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
 import type { FitTargets } from './core/fit';
 import { flatten } from './core/flatten';
@@ -213,7 +213,7 @@ function derivePanels() {
     const sub = extractSubmesh(cut.mesh, triangles);
     const loops = boundaryLoops(sub.mesh);
     if (loops.length !== 1) return { panel, triangles, cut, size, error: `This area has ${loops.length} edges, so it cannot lie flat. A panel that goes right round a limb needs a seam along it.` };
-    return { panel, triangles, cut, size, sub, loop: loops[0] };
+    return { panel, triangles, cut, size, sub, loop: loops[0], edges: panelEdges(cut, triangles) ?? [] };
   });
 }
 
@@ -223,10 +223,15 @@ function refreshPanels() {
   const rows: string[] = [];
   if (panels.length === 0) { $('panels').innerHTML = '<span style="color:#555">No panels yet.</span>'; svg.style.display = 'none'; render(); return; }
   const shapes: string[] = [];
+  const labels: string[] = [];
   outlines = [];
   let x = 0;
   let top = 0;
-  derivePanels().forEach((d, i) => {
+  const derived = derivePanels();
+  // Which panels each seam is a side of: a seam with two panels is a shared seam line (sewn together).
+  const panelsOfSeam = new Map<number, number[]>();
+  derived.forEach((d, i) => d.edges?.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }));
+  derived.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<label>Panel ${i + 1} ease % across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal" style="width:48px"></label> <label>down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical" style="width:48px"></label> <button data-delete-panel="${i}">Remove</button>`;
@@ -236,6 +241,7 @@ function refreshPanels() {
     g.setIndex(new THREE.BufferAttribute(Uint32Array.from(d.triangles.flatMap((t) => [0, 1, 2].map((k) => d.cut.mesh.triangles[3 * t + k]))), 1));
     panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
     const flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    const ox = x; // where this panel starts in the flat view
     const xs = d.loop.map((v) => flat.uv[2 * v]);
     const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
@@ -243,15 +249,25 @@ function refreshPanels() {
     shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map((v) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`).join('L')}Z"/>`);
     x += x1 - x0 + 4;
     top = Math.max(top, y1 - y0);
+    const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
+    const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(flat.uv[2 * a] - flat.uv[2 * b], flat.uv[2 * a + 1] - flat.uv[2 * b + 1]); }, 0);
+    const sides: string[] = [];
+    for (const e of d.edges) {
+      if (e.seam === undefined) continue;
+      const others = (panelsOfSeam.get(e.seam) ?? []).filter((j) => j !== i).map((j) => j + 1);
+      sides.push(`Seam ${e.seam + 1}: ${e.length.toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
+      const mid = subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!;
+      labels.push(`<text x="${(flat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - flat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
+    }
     const warn = flat.flippedTriangles > 0 ? ` <span style="color:#c00">${flat.flippedTriangles} flipped triangles</span>` : '';
-    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; edge length error ${(100 * flat.rmsEdgeError).toFixed(1)}%${warn}</span>`);
+    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; edge length error ${(100 * flat.rmsEdgeError).toFixed(1)}%${warn}<br>${sides.join('<br>')}</span>`);
   });
   $('panels').innerHTML = rows.join('<br>');
   svg.style.display = shapes.length ? 'block' : 'none';
   if (shapes.length) {
     svg.setAttribute('viewBox', `-1 -1 ${(x + 2).toFixed(1)} ${(top + 2).toFixed(1)}`);
     svg.setAttribute('height', String(Math.min(400, Math.max(60, (340 * (top + 2)) / (x + 2)))));
-    svg.innerHTML = shapes.join('');
+    svg.innerHTML = shapes.join('') + labels.join('');
   }
   $('panels').querySelectorAll<HTMLInputElement>('input[data-panel]').forEach((el) => {
     el.onchange = () => { panels[Number(el.dataset.panel)][el.dataset.axis as 'horizontal' | 'vertical'] = Number(el.value) || 0; refreshPanels(); };
@@ -424,6 +440,22 @@ renderer.domElement.addEventListener('pointerup', (e) => {
 (window as unknown as Record<string, unknown>).panelAt = (point: [number, number, number], horizontal = 0, vertical = 0) => {
   const hit = point[2] === 999 ? raycast(bodyMesh(), [point[0], point[1], 300], [0, 0, -1]) : undefined;
   panels.push({ seed: hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), point), horizontal, vertical });
+  refreshPanels();
+  return outlines[outlines.length - 1];
+};
+// A seam point can also be given as a ray ({ origin, dir }: the first body point it hits) or a place ({ point }).
+type PointSpec = { origin: [number, number, number]; dir: [number, number, number] } | { point: [number, number, number] };
+const placeSpec = (spec: PointSpec): SurfacePoint => {
+  if ('point' in spec) return closestSurfacePoint(bodyMesh(), spec.point);
+  const hit = raycast(bodyMesh(), spec.origin, spec.dir)!;
+  return { tri: hit.tri, bary: hit.bary };
+};
+(window as unknown as Record<string, unknown>).seamFromSpecs = (specs: PointSpec[], closed: boolean) => {
+  seams.push({ points: specs.map(placeSpec), closed });
+  redrawSeams();
+};
+(window as unknown as Record<string, unknown>).panelAtSpec = (spec: PointSpec) => {
+  panels.push({ seed: placeSpec(spec), horizontal: 0, vertical: 0 });
   refreshPanels();
   return outlines[outlines.length - 1];
 };

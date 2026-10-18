@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { area, cutMesh, locateInCut, regionFrom, triangleArea } from './cut';
+import { area, cutMesh, locateInCut, panelEdges, regionFrom, triangleArea } from './cut';
 import { type Mesh, boundaryLoops, extractSubmesh } from './mesh';
 import { type Seam, type SurfacePoint, SurfaceGraph, polylineLength, raycast, vertexPoint } from './seam';
 
@@ -304,5 +304,49 @@ describe('locateInCut', () => {
     expect(Math.max(...xs)).toBeGreaterThanOrEqual(2.6 - 1e-9);
     expect(Math.min(...ys)).toBeLessThanOrEqual(3.1 + 1e-9);
     expect(Math.max(...ys)).toBeGreaterThanOrEqual(3.1 - 1e-9);
+  });
+});
+
+describe('seamsOfEdge and panelEdges', () => {
+  const m = grid(6, 6);
+  const g = graphOf(m);
+  const total = (edges: { length: number }[]) => edges.reduce((s, e) => s + e.length, 0);
+
+  it('each seam edge knows which seam it lies on', () => {
+    const a = open(m, [[0.4, 1.7], [5.6, 1.9]]);
+    const b = open(m, [[0.4, 4.2], [5.6, 4.4]]);
+    const cut = cutMesh(m, g, [a, b]);
+    const seamsSeen = new Set([...cut.seamsOfEdge.values()].flat());
+    expect([...seamsSeen].sort()).toEqual([0, 1]);
+    expect(cut.seamsOfEdge.size).toBe(cut.seamEdges.size);
+    for (const key of cut.seamEdges) expect(cut.seamsOfEdge.get(key)!.length).toBe(1);
+  });
+  it('a panel bounded by one closed seam has one side, as long as the seam', () => {
+    const seam = closed(m, [[1.3, 1.3], [4.7, 1.3], [4.7, 4.7], [1.3, 4.7]]);
+    const cut = cutMesh(m, g, [seam]);
+    const inside = regionFrom(cut, locateInCut(cut, m, pointAt(m, 3, 3)));
+    const edges = panelEdges(cut, inside)!;
+    expect(edges).toHaveLength(1);
+    expect(edges[0].seam).toBe(0);
+    expect(edges[0].length).toBeCloseTo(polylineLength(g.seamPath(m.positions, seam)), 9);
+  });
+  it('a panel bounded by several seams has one side per seam, in order round, and neighbouring panels share a side', () => {
+    // A column between two vertical seams, running edge to edge: panels left, middle, right.
+    const left = open(m, [[2, 0], [2, 6]]);
+    const right = open(m, [[4, 0], [4, 6]]);
+    const cut = cutMesh(m, g, [left, right]);
+    const middle = panelEdges(cut, regionFrom(cut, locateInCut(cut, m, pointAt(m, 3, 3))))!;
+    const leftPanel = panelEdges(cut, regionFrom(cut, locateInCut(cut, m, pointAt(m, 1, 3))))!;
+    const seamsOf = (edges: { seam: number | undefined }[]) => edges.map((e) => e.seam);
+    expect(middle.filter((e) => e.seam !== undefined).map((e) => e.seam).sort()).toEqual([0, 1]);
+    expect(seamsOf(middle).some((q) => q === undefined)).toBe(true); // the top and bottom are the mesh border
+    expect(leftPanel.some((e) => e.seam === 0)).toBe(true);
+    const shared = (e: { seam: number | undefined; length: number }[], k: number) => e.find((x) => x.seam === k)!.length;
+    expect(shared(middle, 0)).toBeCloseTo(shared(leftPanel, 0), 9); // the same line seen from both panels
+    expect(total(middle)).toBeGreaterThan(6 * 2);
+  });
+  it('is undefined for a region that is not a disc (an annulus)', () => {
+    const cut = cutMesh(m, g, [closed(m, [[1.3, 1.3], [4.7, 1.3], [4.7, 4.7], [1.3, 4.7]])]);
+    expect(panelEdges(cut, regionFrom(cut, locateInCut(cut, m, pointAt(m, 0.4, 0.4))))).toBeUndefined();
   });
 });
