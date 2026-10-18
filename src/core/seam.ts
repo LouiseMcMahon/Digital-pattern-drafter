@@ -118,6 +118,8 @@ export function closestSurfacePoint(m: Mesh, p: Vec3): SurfacePoint & { distance
 export interface SnapTarget {
   name: string;
   point: Vec3;
+  /** The exact surface point, when the target is a seam point: snapping reuses it so both seams hold the same point. */
+  surface?: SurfacePoint;
 }
 
 /**
@@ -132,7 +134,7 @@ export function snapPoint(m: Mesh, p: SurfacePoint, targets: readonly SnapTarget
     const d = len(sub(t.point, at));
     if (d <= bd) { bd = d; best = t; }
   }
-  if (best) return { point: closestSurfacePoint(m, best.point), target: best.name };
+  if (best) return { point: best.surface ? { tri: best.surface.tri, bary: [...best.surface.bary] as Vec3 } : closestSurfacePoint(m, best.point), target: best.name };
   return { point: snapToVertex(m, p, vertexRadius) };
 }
 

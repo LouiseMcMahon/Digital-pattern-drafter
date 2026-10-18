@@ -7,7 +7,7 @@ import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
 import type { FitTargets } from './core/fit';
 import { FLATTEN_TOLERANCE, flatten } from './core/flatten';
-import { boundaryLoops, extractSubmesh } from './core/mesh';
+import { boundaryLoops, extractSubmesh, len, sub } from './core/mesh';
 import { FIXTURES } from './core/fixtures';
 import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
@@ -204,9 +204,42 @@ function drawSeams() {
       dot.position.set(...pointOnSurface(m, p));
       seamGroup.add(dot);
     }
-    rows.push(`Seam ${i + 1}${active ? ' (drawing)' : ''}: ${seam.points.length} points${seam.closed ? ', closed' : ''}, ${polylineLength(path).toFixed(1)} cm`);
+    rows.push(`<label><input type="checkbox" data-merge="${i}"${mergeSel.has(i) ? ' checked' : ''}${seam.closed || seam.points.length < 2 ? ' disabled' : ''}> Seam ${i + 1}${active ? ' (drawing)' : ''}: ${seam.points.length} points${seam.closed ? ', closed' : ''}, ${polylineLength(path).toFixed(1)} cm</label>`);
   });
-  $('seams').innerHTML = rows.join('<br>') || '<span style="color:#555">No seams yet.</span>';
+  $('seams').innerHTML = rows.length ? `${rows.join('<br>')}<br><button id="seam-merge" title="Join the two ticked open seams into one, end to end">Merge ticked seams</button>` : '<span style="color:#555">No seams yet.</span>';
+  $('seams').querySelectorAll<HTMLInputElement>('input[data-merge]').forEach((el) => {
+    el.onchange = () => { const i = Number(el.dataset.merge); if (el.checked) mergeSel.add(i); else mergeSel.delete(i); updateMergeButton(); };
+  });
+  const mb = document.getElementById('seam-merge') as HTMLButtonElement | null;
+  if (mb) mb.onclick = mergeTicked;
+  updateMergeButton();
+}
+const mergeSel = new Set<number>();
+function updateMergeButton() {
+  const mb = document.getElementById('seam-merge') as HTMLButtonElement | null;
+  if (mb) mb.disabled = [...mergeSel].filter((i) => i < seams.length).length !== 2;
+}
+const samePoint = (a: SurfacePoint, b: SurfacePoint) => a.tri === b.tri && a.bary.every((w, k) => Math.abs(w - b.bary[k]) < 1e-9);
+/** Joins the two ticked open seams into one chain at their nearest ends (a shared end point is kept once). */
+function mergeTicked() {
+  const [i, j] = [...mergeSel].filter((k) => k < seams.length).sort((x, y) => x - y);
+  mergeSel.clear();
+  if (j === undefined) return;
+  const m = bodyMesh();
+  const [a, b] = [seams[i], seams[j]];
+  const ends = (q: Seam) => [q.points[0], q.points[q.points.length - 1]];
+  let best = { d: Infinity, flipA: false, flipB: false };
+  ends(a).forEach((pa, ka) => ends(b).forEach((pb, kb) => {
+    const d = len(sub(pointOnSurface(m, pa), pointOnSurface(m, pb)));
+    if (d < best.d) best = { d, flipA: ka === 0, flipB: kb === 1 };
+  }));
+  const first = best.flipA ? [...a.points].reverse() : a.points;
+  const second = best.flipB ? [...b.points].reverse() : b.points;
+  const merged: Seam = { points: [...first, ...(samePoint(first[first.length - 1], second[0]) ? second.slice(1) : second)], closed: false };
+  seams.splice(j, 1);
+  seams.splice(i, 1);
+  seams.push(merged); // the merged seam becomes the one being drawn
+  redrawSeams();
 }
 const activeSeam = () => seams[seams.length - 1];
 const redrawSeams = () => { drawSeams(); render(); if (panels.length) refreshPanels(); };
@@ -380,7 +413,7 @@ function targets(skip?: { seam: number; index: number }): SnapTarget[] {
   const m = bodyMesh();
   const out = [...landmarks, ...ringTargets];
   seams.forEach((seam, si) => seam.points.forEach((p, i) => {
-    if (!(skip && skip.seam === si && skip.index === i)) out.push({ name: `seam ${si + 1} point ${i + 1}`, point: pointOnSurface(m, p) });
+    if (!(skip && skip.seam === si && skip.index === i)) out.push({ name: `seam ${si + 1} point ${i + 1}`, point: pointOnSurface(m, p), surface: p });
   }));
   return out;
 }
@@ -414,11 +447,16 @@ function snapAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>, skip
 /** The control point under the pointer, measured on screen like snapping is. */
 function grabAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>) {
   const rect = renderer.domElement.getBoundingClientRect();
-  return findControlPoint(bodyMesh(), seams, (p) => {
+  // While a seam is being drawn the other seams are locked: only the open one can be grabbed, so a click on another
+  // seam's point snaps to it (sharing the point) instead of dragging it.
+  const open = activeSeam() && !activeSeam().closed ? seams.length - 1 : -1;
+  const grabbable = open >= 0 ? [activeSeam()] : seams;
+  const found = findControlPoint(bodyMesh(), grabbable, (p) => {
     const v = new THREE.Vector3(...p).project(camera);
     const hidden = Math.abs(camera.position.distanceTo(new THREE.Vector3(...p)) - hit.t) > 3;
     return hidden ? Infinity : Math.hypot(rect.left + ((v.x + 1) / 2) * rect.width - e.clientX, rect.top + ((1 - v.y) / 2) * rect.height - e.clientY);
   }, GRAB_PIXELS);
+  return found && open >= 0 ? { seam: open, index: found.index } : found;
 }
 const setSnapNote = (name?: string) => { $('snap').textContent = name ? `Snapped to ${name}` : ''; };
 

@@ -367,6 +367,12 @@ describe('snapPoint', () => {
   const m = grid(2, 2); // 1 cm squares
   const mid: SurfacePoint = raycast(m, [0.62, 0.55, 3], [0, 0, -1])!; // near the centre of the 2 x 2 patch, away from every vertex
   const neck: SnapTarget = { name: 'neck point', point: [0.8, 0.5, 0.4] }; // 0.4 above the surface
+  it('reuses the exact surface point of a seam point target, so two seams hold the same point', () => {
+    const other: SurfacePoint = { tri: mid.tri, bary: [0.2, 0.3, 0.5] };
+    const r = snapPoint(m, mid, [{ name: 'seam 1 point 1', point: pointOnSurface(m, other), surface: other }], Infinity);
+    expect(r.point).toEqual(other);
+    expect(r.point).not.toBe(other);
+  });
   it('snaps to a landmark within the radius, landing on the surface under it', () => {
     const r = snapPoint(m, mid, [neck], 0.5);
     expect(r.target).toBe('neck point');
