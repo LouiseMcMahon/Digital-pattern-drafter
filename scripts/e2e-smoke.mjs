@@ -3,11 +3,11 @@
 // Set CHROMIUM_PATH to use a specific browser; otherwise Playwright's managed Chromium
 // (`npx playwright-core install chromium`).
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
 
 const PORT = 4179;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', shell: process.platform === 'win32' });
 const stop = () => server.kill();
 process.on('exit', stop);
 
@@ -178,7 +178,7 @@ try {
   // that meet at shared points. The side and shoulder seams belong to both panels, with the same length on each.
   await page.click('#seam-clear');
   await page.click('#panel-clear');
-  const made = await page.evaluate(() => {
+  const made = await page.evaluate(async () => {
     const lm = Object.fromEntries(window.landmarkPoints().map((l) => [l.name, l.point]));
     const P = (name) => ({ point: lm[name] });
     const front = (x, y) => ({ origin: [x, y, 300], dir: [0, 0, -1] });
@@ -200,8 +200,8 @@ try {
     add([P('axilla R'), sideR]);
     add([sideL, front(8, 105), front(0, 105), front(-8, 105), sideR]);
     add([sideL, back(8, 105), back(0, 105), back(-8, 105), sideR]);
-    window.panelAtSpec(front(0, 125));
-    window.panelAtSpec(back(0, 125));
+    await window.panelAtSpec(front(0, 125));
+    await window.panelAtSpec(back(0, 125));
     return document.getElementById('panels').innerText;
   });
   const sides = (text) => [...text.matchAll(/Seam (\d+): ([0-9.]+) cm \(flat ([0-9.]+)\)(, shared with panel (\d+))?/g)].map((m) => ({ seam: Number(m[1]), length: Number(m[2]), flat: Number(m[3]), shared: m[5] ? Number(m[5]) : undefined }));
@@ -263,6 +263,41 @@ try {
   const drawnPoints = await page.evaluate(() => window.seamState());
   if (drawnPoints[0].points.length !== 2 || Math.abs(drawnPoints[0].points[1][1] - onLine[1]) > 0.3) fail('the seam point placed on the waist line is not at the waist height');
   await page.uncheck('#draw');
+
+  // Princess seam, undo and redo, saving and opening seams, and seams that cross.
+  await page.click('#seam-clear');
+  await page.click('#panel-clear');
+  await page.click('#princess-l');
+  const princess = await page.evaluate(() => ({ state: window.seamState(), lm: Object.fromEntries(window.landmarkPoints().map((l) => [l.name, l.point])) }));
+  if (princess.state.length !== 1 || princess.state[0].points.length !== 4) fail(`the princess seam button should draw one seam of four points: ${JSON.stringify(princess.state.map((q) => q.points.length))}`);
+  const dist = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
+  if (dist(princess.state[0].points[0], princess.lm['shoulder point L']) > 0.5 || dist(princess.state[0].points[1], princess.lm['bust apex L']) > 0.5) fail('the princess seam does not start at the shoulder point and pass through the bust apex');
+  if (!(princess.state[0].points[2][1] < princess.state[0].points[1][1]) || !(princess.state[0].points[3][1] < princess.state[0].points[2][1])) fail('the princess seam does not run down through the waist to the hip');
+  await page.click('#seam-undo');
+  if ((await page.evaluate(() => window.seamState())).length !== 0) fail('Undo did not remove the princess seam');
+  await page.click('#seam-redo');
+  const redone = await page.evaluate(() => window.seamState());
+  if (redone.length !== 1 || dist(redone[0].points[3], princess.state[0].points[3]) > 1e-9) fail('Redo did not bring the princess seam back as it was');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#design-save')]);
+  const saved = JSON.parse(readFileSync(await download.path(), 'utf8'));
+  if (saved.seams.length !== 1 || saved.seams[0].points.length !== 4) fail('the saved file does not hold the princess seam');
+  await page.click('#seam-clear');
+  await page.setInputFiles('#design-file', await download.path());
+  await page.waitForFunction(() => window.seamState().length === 1, null, { timeout: 10000 }).catch(() => fail('opening the saved file did not bring the seam back'));
+  const reopened = await page.evaluate(() => window.seamState());
+  if (dist(reopened[0].points[2], princess.state[0].points[2]) > 1e-9) fail('the reopened seam is not where it was saved');
+  await page.setInputFiles('#design-file', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"nope":1}') });
+  await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Not a usable design file'), null, { timeout: 10000 }).catch(() => fail('a bad file was not reported'));
+  if ((await page.evaluate(() => window.seamState())).length !== 1) fail('a bad file changed the seams');
+  await page.click('#seam-clear');
+  await page.evaluate(() => {
+    window.seamFromSpecs([{ origin: [-12, 120, 300], dir: [0, 0, -1] }, { origin: [12, 128, 300], dir: [0, 0, -1] }], false);
+    window.seamFromSpecs([{ origin: [-4, 140, 300], dir: [0, 0, -1] }, { origin: [4, 108, 300], dir: [0, 0, -1] }], false);
+  });
+  const crossed = await page.evaluate(() => window.seamState());
+  if (crossed.length !== 2 || crossed[0].points.length !== 3 || crossed[1].points.length !== 3) fail(`two crossing seams should each gain a shared point: ${JSON.stringify(crossed.map((q) => q.points.length))}`);
+  if (dist(crossed[0].points[1], crossed[1].points[1]) > 1e-6) fail('the crossing point is not shared by the two seams');
+  await page.click('#seam-clear');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,
   // not hang on "Fitting..." with the button disabled. The page fetches the body once itself; make the

@@ -21,11 +21,18 @@ const MODULES = {
   flatten: { mutate: 'src/core/flatten.ts', tests: ['src/core/flatten.test.ts', 'src/core/lscm.test.ts'] },
   body: { mutate: 'src/core/body.ts', tests: ['src/core/body.test.ts'] },
   seam: { mutate: 'src/core/seam.ts', tests: ['src/core/seam.test.ts'] },
+  history: { mutate: 'src/core/history.ts', tests: ['src/core/history.test.ts'] },
+  design: { mutate: 'src/core/design.ts', tests: ['src/core/design.test.ts'] },
+  crossings: { mutate: 'src/core/crossings.ts', tests: ['src/core/crossings.test.ts'] },
+  princess: { mutate: 'src/core/princess.ts', tests: ['src/core/princess.test.ts'] },
+  allowance: { mutate: 'src/core/allowance.ts', tests: ['src/core/allowance.test.ts'] },
+  panelPipeline: { mutate: 'src/core/panelPipeline.ts', tests: ['src/core/panelPipeline.test.ts', 'src/core/panelPipeline.failure.test.ts'] },
   // pose.test.ts covers the default-pose path through evaluate() on the real body.
   bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts'] },
 };
 
 const args = process.argv.slice(2);
+const onWindows = process.platform === 'win32'; // npx is a .cmd file there, which only a shell can start
 const gate = args.includes('--gate');
 const wanted = args.filter((a) => !a.startsWith('--'));
 
@@ -99,11 +106,11 @@ function runModule(name, concurrency, quiet) {
   const env = { ...process.env, MUTATION_TESTS: tests.join(',') };
   if (!quiet) {
     console.log(`\n=== mutation testing: ${mutate} (tests: ${tests.join(', ')}) ===`);
-    return Promise.resolve(spawnSync('npx', args, { stdio: 'inherit', env }).status);
+    return Promise.resolve(spawnSync('npx', args, { stdio: 'inherit', env, shell: onWindows }).status);
   }
   const log = createWriteStream(`${dir}/stryker.log`);
   return new Promise((resolve) => {
-    const child = spawn('npx', args, { env });
+    const child = spawn('npx', args, { env, shell: onWindows });
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     child.on('close', (code) => { log.end(); resolve(code); });
@@ -115,7 +122,7 @@ const jobsArg = args.find((a) => a.startsWith('--jobs='));
 const jobs = Math.max(1, Math.min(names.length, jobsArg ? Number(jobsArg.slice(7)) : names.length > 1 ? Math.min(names.length, cpuCount) : 1));
 const concurrency = Math.max(1, Math.floor(cpuCount / jobs)); // Stryker workers per module: the machine is shared between the jobs
 // Slowest first, so the last jobs to start are the short ones.
-const SLOWEST = ['flatten', 'geodesic', 'cut', 'seam', 'bodyModel', 'body', 'lscm', 'pose', 'slice'];
+const SLOWEST = ['flatten', 'panelPipeline', 'geodesic', 'cut', 'seam', 'crossings', 'bodyModel', 'body', 'lscm', 'pose', 'slice'];
 const queue = [...names].sort((a, b) => (SLOWEST.indexOf(a) + 1 || 99) - (SLOWEST.indexOf(b) + 1 || 99));
 if (jobs > 1) console.log(`running ${names.length} modules, ${jobs} at a time, ${concurrency} Stryker worker(s) each (logs in reports/mutation/<module>/stryker.log)`);
 
