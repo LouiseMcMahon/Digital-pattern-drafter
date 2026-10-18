@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
+import { mirrorSeam } from './core/mirror';
 import { area, cutMesh, locateInCut, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
 import type { FitTargets } from './core/fit';
@@ -27,7 +28,7 @@ controls.innerHTML = `
   <label><input type="checkbox" id="lines"> show where each ring is measured</label>
   <h4>Seams</h4>
   <label><input type="checkbox" id="draw"> draw seams: click the body to add points, drag a point to move it, shift-click a point to delete it (drag elsewhere to turn the view). Points snap to landmarks (green) and to the ends of other seams.</label><br>
-  <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-clear">Clear all</button>
+  <button id="seam-undo">Undo point</button> <button id="seam-close">Close seam</button> <button id="seam-new">Start new seam</button> <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror last seam</button> <button id="seam-clear">Clear all</button>
   <h4>Panels</h4>
   <button id="panel-pick">Make a panel: click inside seams</button> <button id="panel-clear">Clear panels</button>
   <div id="panels" style="margin-top:4px"></div>
@@ -436,6 +437,13 @@ $('seam-undo').onclick = () => {
 };
 $('seam-close').onclick = () => { if (activeSeam() && activeSeam().points.length > 2) { activeSeam().closed = true; redrawSeams(); } };
 $('seam-new').onclick = () => { if (activeSeam() && activeSeam().points.length > 0 && !activeSeam().closed) { seams.push({ points: [], closed: false }); redrawSeams(); } };
+$('seam-mirror').onclick = () => {
+  const seam = activeSeam();
+  if (!seam || seam.points.length === 0) return;
+  seams.push(mirrorSeam(bodyMesh(), seam));
+  setSnapNote();
+  redrawSeams();
+};
 $('seam-clear').onclick = () => { seams = []; redrawSeams(); };
 
 const worker = new Worker(new URL('./fit.worker.ts', import.meta.url), { type: 'module' });

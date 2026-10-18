@@ -148,6 +148,28 @@ try {
   if (!dims || !(dims[1] > 30 && dims[1] < 55 && dims[2] > 45 && dims[2] < 70 && dims[4] < 15)) fail(`the front torso panel has an implausible size or distortion: "${panelText}"`);
   if (await page.$eval('#flat', (e) => getComputedStyle(e).display) === 'none') fail('the flat panel was not drawn');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panel-flat.png' });
+
+  // Mirroring: draw half a bodice (centre front, round the neck and armhole, down to the centre waist), mirror it,
+  // and the panel inside comes out symmetric (the front torso is the same on both sides).
+  await page.click('#seam-clear');
+  await page.click('#panel-clear');
+  await page.evaluate(() => {
+    const lm = Object.fromEntries(window.landmarkPoints().map((l) => [l.name, l.point]));
+    const front = (x, y) => [x, y, 999];
+    window.seamFromPoints([front(0, 150), lm['neck point L'], lm['shoulder point L'], front(17.5, 141), front(15, 131), front(13, 100), front(0, 100)], false);
+  });
+  await page.click('#seam-mirror');
+  const outline = await page.evaluate(() => window.panelAt([0, 120, 999]));
+  await page.waitForFunction(() => document.getElementById('panels')?.textContent?.includes('cm flat'), null, { timeout: 60000 })
+    .catch(async () => fail(`mirrored half-seams did not enclose a panel: "${await page.$eval('#panels', (e) => e.textContent)}"`));
+  const xs = outline.map((p) => p[0]);
+  const centre = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const mirrored = outline.map(([x, y]) => [2 * centre - x, y]);
+  const distance = (p) => { let best = Infinity; for (let i = 0; i < mirrored.length; i++) { const a = mirrored[i], b = mirrored[(i + 1) % mirrored.length]; const dx = b[0] - a[0], dy = b[1] - a[1]; const l2 = dx * dx + dy * dy; const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0; best = Math.min(best, Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1])); } return best; };
+  const worst = Math.max(...outline.map(distance));
+  const width = Math.max(...xs) - Math.min(...xs);
+  if (!(worst < 0.02 * width)) fail(`the mirrored panel is not symmetric: worst point ${worst.toFixed(2)} cm from its mirror image on a ${width.toFixed(1)} cm wide panel`);
+  await page.locator('#flat').screenshot({ path: 'e2e-out/panel-mirrored.png' });
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,

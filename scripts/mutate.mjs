@@ -11,6 +11,7 @@ import { cpus } from 'node:os';
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
   pose: { mutate: 'src/core/pose.ts', tests: ['src/core/pose.rig.test.ts'] },
+  mirror: { mutate: 'src/core/mirror.ts', tests: ['src/core/mirror.test.ts'] },
   geodesic: { mutate: 'src/core/geodesic.ts', tests: ['src/core/seam.test.ts'] },
   cut: { mutate: 'src/core/cut.ts', tests: ['src/core/cut.test.ts'] },
   mesh: { mutate: 'src/core/mesh.ts', tests: ['src/core/mesh.test.ts'] },
