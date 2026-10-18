@@ -59,6 +59,6 @@ describe('baked body model', () => {
     const wrist = (deg?: number) => body.joint(body.evaluate({}, deg === undefined ? {} : { armDegrees: deg }), 'wrist.L')[0];
     expect(wrist(60)).toBeGreaterThan(wrist() + 5);
     expect(wrist(0)).toBeLessThan(wrist() - 1);
-    expect(wrist(45)).toBeCloseTo(wrist(), 9); // 45 degrees is the default
+    expect(wrist(30)).toBeCloseTo(wrist(), 9); // 30 degrees is the default
   });
 });

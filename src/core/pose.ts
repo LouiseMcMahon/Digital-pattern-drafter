@@ -10,7 +10,7 @@ export type PoseName = 'tailor' | 'rest';
 /** Standard tailor pose parameters. Change these only together with REQUIREMENTS.md R5 and the golden files. */
 export const TAILOR_POSE = {
   /** Arms are held this far from vertical, out to the sides in the coronal plane (an A-pose: clear of the torso so the underarm can be measured). */
-  armDegreesFromVertical: 45,
+  armDegreesFromVertical: 30,
 } as const;
 
 type V3 = [number, number, number];
