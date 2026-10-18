@@ -7,6 +7,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
@@ -15,6 +16,9 @@ const MODULES = {
   mirror: { mutate: 'src/core/mirror.ts', tests: ['src/core/mirror.test.ts'] },
   geodesic: { mutate: 'src/core/geodesic.ts', tests: ['src/core/seam.test.ts'] },
   cut: { mutate: 'src/core/cut.ts', tests: ['src/core/cut.test.ts'] },
+  bodyField: { mutate: 'src/core/bodyField.ts', tests: ['src/core/bodyField.test.ts'] },
+  drape: { mutate: 'src/core/drape.ts', tests: ['src/core/drape.test.ts'] },
+  cloth: { mutate: 'src/core/cloth.ts', tests: ['src/core/cloth.test.ts'] },
   mesh: { mutate: 'src/core/mesh.ts', tests: ['src/core/mesh.test.ts'] },
   ease: { mutate: 'src/core/ease.ts', tests: ['src/core/ease.test.ts'] },
   lscm: { mutate: 'src/core/lscm.ts', tests: ['src/core/lscm.test.ts'] },
@@ -95,15 +99,16 @@ function runModule(name, concurrency, quiet) {
   config.concurrency = concurrency;
   config.mutate = ranges.has(name) ? ranges.get(name).map(([a, b]) => `${mutate}:${a}-${b}`) : [mutate];
   writeFileSync(`${dir}/stryker.config.json`, JSON.stringify(config, null, 2));
-  const args = ['stryker', 'run', `${dir}/stryker.config.json`];
+  // Run Stryker's own script with this node: spawning `npx` fails on Windows (it is a .cmd file).
+  const args = [fileURLToPath(new URL('../node_modules/@stryker-mutator/core/bin/stryker.js', import.meta.url)), 'run', `${dir}/stryker.config.json`];
   const env = { ...process.env, MUTATION_TESTS: tests.join(',') };
   if (!quiet) {
     console.log(`\n=== mutation testing: ${mutate} (tests: ${tests.join(', ')}) ===`);
-    return Promise.resolve(spawnSync('npx', args, { stdio: 'inherit', env }).status);
+    return Promise.resolve(spawnSync(process.execPath, args, { stdio: 'inherit', env }).status);
   }
   const log = createWriteStream(`${dir}/stryker.log`);
   return new Promise((resolve) => {
-    const child = spawn('npx', args, { env });
+    const child = spawn(process.execPath, args, { env });
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     child.on('close', (code) => { log.end(); resolve(code); });
@@ -113,7 +118,8 @@ function runModule(name, concurrency, quiet) {
 const cpuCount = cpus().length;
 const jobsArg = args.find((a) => a.startsWith('--jobs='));
 const jobs = Math.max(1, Math.min(names.length, jobsArg ? Number(jobsArg.slice(7)) : names.length > 1 ? Math.min(names.length, cpuCount) : 1));
-const concurrency = Math.max(1, Math.floor(cpuCount / jobs)); // Stryker workers per module: the machine is shared between the jobs
+// Stryker workers per module: the machine is shared between the jobs. MUTATE_WORKERS caps it: with every core busy the tests run slow, mutants that only run slower time out, and a timeout counts as detected, so fewer workers give the honest score.
+const concurrency = process.env.MUTATE_WORKERS ? Math.max(1, Number(process.env.MUTATE_WORKERS)) : Math.max(1, Math.floor(cpuCount / jobs));
 // Slowest first, so the last jobs to start are the short ones.
 const SLOWEST = ['flatten', 'geodesic', 'cut', 'seam', 'bodyModel', 'body', 'lscm', 'pose', 'slice'];
 const queue = [...names].sort((a, b) => (SLOWEST.indexOf(a) + 1 || 99) - (SLOWEST.indexOf(b) + 1 || 99));

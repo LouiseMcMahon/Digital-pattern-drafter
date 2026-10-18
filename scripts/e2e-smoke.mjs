@@ -1,13 +1,15 @@
 // End-to-end smoke test of the real page: build, serve, fit a 6'2" woman in a real browser, check the
 // page reports every measurement within 0.5 cm (R1) and nothing errors. `npm run build && npm run e2e`.
 // Set CHROMIUM_PATH to use a specific browser; otherwise Playwright's managed Chromium
-// (`npx playwright-core install chromium`).
+// (`npx playwright-core install chromium`); if that is not installed, an installed Chrome or Edge is used.
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const PORT = 4179;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+// Run vite's own script with this node: spawning `npx` fails on Windows (it is a .cmd file).
+const server = spawn(process.execPath, [fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url)), 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const stop = () => server.kill();
 process.on('exit', stop);
 
@@ -21,10 +23,14 @@ try {
     await new Promise((r) => setTimeout(r, 500));
     if (i === 59) fail('preview server did not start');
   }
-  browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || undefined,
-    args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
-  });
+  const options = { executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'] };
+  const useInstalled = !options.executablePath && !existsSync(chromium.executablePath()); // no managed Chromium: use Chrome, then Edge
+  try {
+    browser = await chromium.launch(useInstalled ? { ...options, channel: 'chrome' } : options);
+  } catch (chromeError) {
+    if (!useInstalled) throw chromeError;
+    try { browser = await chromium.launch({ ...options, channel: 'msedge' }); } catch { throw chromeError; } // report Chrome's error, the first choice
+  }
   const page = await browser.newPage({ viewport: { width: 1500, height: 1250 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
@@ -218,6 +224,31 @@ try {
   }
   if (frontSides.some((e) => !sharedSeams.includes(e.seam) && e.shared !== undefined)) fail('a seam only one panel touches was reported as shared');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panels-front-back.png' });
+
+  // Cloth simulation of the sewn front and back: ticking the view before running says it is out of date, clicking
+  // Simulate shows the spinner over the 3D view, and when it ends the overlay is gone and the cloth is reported.
+  const started = await page.evaluate(() => {
+    const tick = document.getElementById('cloth-on');
+    tick.checked = true;
+    tick.dispatchEvent(new Event('change'));
+    const stale = document.getElementById('panels').innerText.includes('out of date');
+    document.getElementById('cloth-run').click();
+    return { stale, overlay: document.querySelector('.busy').classList.contains('on') };
+  });
+  if (!started.stale) fail('a cloth view that has not been simulated should say it is out of date');
+  if (!started.overlay) fail('the spinner overlay did not show when Simulate cloth was clicked');
+  // The overlay says what is happening: its text and bar move on from the start while the simulation runs.
+  await page.waitForFunction(() => /% done/.test(document.getElementById('busy-detail').textContent ?? '') && document.getElementById('busy-bar').style.width !== '0%', null, { timeout: 120000 })
+    .catch(async () => fail(`the spinner overlay showed no progress: "${await page.$eval('#busy-detail', (e) => e.textContent)}"`));
+  const stages = await page.evaluate(() => document.getElementById('busy-text').textContent);
+  if (!/Laying the panels over the body|Fitting the patterns|Flattening the cloth/.test(stages ?? '')) fail(`unexpected progress text: "${stages}"`);
+  await page.waitForFunction(() => !document.querySelector('.busy').classList.contains('on') && document.getElementById('panels').innerText.includes('cloth simulation:'), null, { timeout: 900000 })
+    .catch(async () => fail(`the cloth simulation did not finish and report: "${await page.$eval('#panels', (e) => e.innerText)}"`));
+  const clothText = await page.$eval('#panels', (e) => e.innerText);
+  if (clothText.includes('out of date')) fail(`panels still out of date after simulating: "${clothText}"`);
+  if ((clothText.match(/cloth simulation:/g) ?? []).length !== 2) fail(`expected both panels to report the cloth simulation: "${clothText}"`);
+  await page.screenshot({ path: 'e2e-out/cloth.png' });
+  await page.evaluate(() => { const tick = document.getElementById('cloth-on'); tick.checked = false; tick.dispatchEvent(new Event('change')); });
 
   // A new seam can start in the middle of an existing one: the click snaps to the seam's path and the seam gains a
   // control point there (so the two meet, and a panel can be cut on both sides).

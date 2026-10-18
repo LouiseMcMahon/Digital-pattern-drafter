@@ -11,5 +11,8 @@
  "cut": 78,
  "geodesic": 78,
  "mirror": 98,
- "guides": 90
+ "guides": 90,
+ "bodyField": 75,
+ "drape": 80,
+ "cloth": 90
 }
