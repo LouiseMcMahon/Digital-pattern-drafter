@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom, triangleArea } from './cut';
 import { type Mesh, boundaryLoops, extractSubmesh } from './mesh';
-import { type Seam, type SurfacePoint, SurfaceGraph, polylineLength, raycast, vertexPoint } from './seam';
+import { type Seam, type SurfacePoint, SurfaceGraph, insertControlPoint, nearestOnSeams, polylineLength, raycast, vertexPoint } from './seam';
 
 /** n x n squares of side `size` in z = 0, each cut along one diagonal. Vertex (i, j) has id j * (n + 1) + i. */
 function grid(n: number, size: number): Mesh {
@@ -348,5 +348,23 @@ describe('seamsOfEdge and panelEdges', () => {
   it('is undefined for a region that is not a disc (an annulus)', () => {
     const cut = cutMesh(m, g, [closed(m, [[1.3, 1.3], [4.7, 1.3], [4.7, 4.7], [1.3, 4.7]])]);
     expect(panelEdges(cut, regionFrom(cut, locateInCut(cut, m, pointAt(m, 0.4, 0.4))))).toBeUndefined();
+  });
+});
+
+describe('a seam that ends in the middle of another seam (junction inserted into its path)', () => {
+  it('cuts the same three regions as if the first seam had had a control point there', () => {
+    const m = grid(6, 6);
+    const g = graphOf(m);
+    const horizontal: Seam = open(m, [[0, 3], [6, 3]]); // two control points: nothing in the middle
+    const hit = nearestOnSeams([g.seamLegs(m.positions, horizontal)], (p) => Math.hypot(p[0] - 2.2, p[1] - 3.4, p[2]), 1)!;
+    const junction = insertControlPoint(m, horizontal, hit.leg, hit.at);
+    const vertical: Seam = { points: [junction, pointAt(m, hit.at[0], 6)], closed: false };
+    const cut = cutMesh(m, g, [horizontal, vertical]);
+    const areas = [[1, 5], [4, 5], [3, 1]].map(([x, y]) => area(cut.mesh, regionFrom(cut, locateInCut(cut, m, pointAt(m, x, y)))));
+    expect(areas[0] + areas[1] + areas[2]).toBeCloseTo(36, 9);
+    expect(areas[0]).toBeCloseTo(hit.at[0] * 3, 9);
+    expect(areas[1]).toBeCloseTo((6 - hit.at[0]) * 3, 9);
+    expect(areas[2]).toBeCloseTo(18, 9);
+    expectWellFormed(cut.mesh);
   });
 });

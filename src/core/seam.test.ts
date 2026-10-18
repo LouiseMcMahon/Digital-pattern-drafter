@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Mesh, Vec3 } from './mesh';
-import { Heap, closestBary, type Seam, type SnapTarget, closestSurfacePoint, findControlPoint, snapPoint, type SurfacePoint, SurfaceGraph, pointOnSurface, polylineLength, raycast, snapToVertex, vertexPoint } from './seam';
+import { Heap, insertControlPoint, nearestOnSeams, closestBary, type Seam, type SnapTarget, closestSurfacePoint, findControlPoint, snapPoint, type SurfacePoint, SurfaceGraph, pointOnSurface, polylineLength, raycast, snapToVertex, vertexPoint } from './seam';
 
 /** n x n unit squares in z = 0 (side `size`), each cut along one diagonal. Vertex (i, j) has id j * (n + 1) + i. */
 function grid(n: number, size = 1): Mesh {
@@ -552,5 +552,74 @@ describe('SurfaceGraph.path is a straight line over the surface', () => {
     for (const n of nodes.slice(1, -1)) {
       if (n.kind === 'edge') { expect(n.a).toBeLessThan(n.b); expect(n.t).toBeGreaterThanOrEqual(0); expect(n.t).toBeLessThanOrEqual(1); }
     }
+  });
+});
+
+describe('seamLegs', () => {
+  const m = grid(6, 6);
+  const g = graphOf(m);
+  const at = (x: number, y: number) => raycast(m, [x, y, 5], [0, 0, -1])!;
+  it('has one polyline per leg, joined end to end, and closed seams have the leg back to the start', () => {
+    const open: Seam = { points: [at(0.5, 0.5), at(3, 1.2), at(5.5, 4.4)], closed: false };
+    const legs = g.seamLegs(m.positions, open);
+    expect(legs).toHaveLength(2);
+    expect(legs[0].slice(-3)).toEqual(legs[1].slice(0, 3));
+    expect(legs.flat().length).toBe(legs[0].length + legs[1].length);
+    expect(g.seamLegs(m.positions, { points: open.points, closed: true })).toHaveLength(3);
+    expect(g.seamLegs(m.positions, { points: open.points.slice(0, 2), closed: true })).toHaveLength(1); // two points do not enclose anything
+    expect(g.seamLegs(m.positions, { points: [open.points[0]], closed: false })).toEqual([]);
+  });
+  it('seamPath is the legs without the repeated joins', () => {
+    const s: Seam = { points: [at(0.5, 0.5), at(3, 1.2), at(5.5, 4.4)], closed: false };
+    const legs = g.seamLegs(m.positions, s);
+    expect(g.seamPath(m.positions, s)).toEqual([...legs[0], ...legs[1].slice(3)]);
+  });
+});
+
+describe('nearestOnSeams and insertControlPoint', () => {
+  const m = grid(6, 6);
+  const g = graphOf(m);
+  const at = (x: number, y: number) => raycast(m, [x, y, 5], [0, 0, -1])!;
+  const seams: Seam[] = [
+    { points: [at(0.4, 2), at(3, 2), at(5.6, 2)], closed: false },
+    { points: [at(0.4, 4.5), at(5.6, 4.5)], closed: false },
+  ];
+  const legs = seams.map((q) => g.seamLegs(m.positions, q));
+  const near = (x: number, y: number) => (p: Vec3) => Math.hypot(p[0] - x, p[1] - y, p[2]);
+
+  it('finds the nearest point on a seam path, and which leg it is on', () => {
+    const hit = nearestOnSeams(legs, near(1.4, 2.3), 1)!;
+    expect(hit.seam).toBe(0);
+    expect(hit.leg).toBe(0);
+    expect(hit.at[0]).toBeCloseTo(1.4, 3);
+    expect(hit.at[1]).toBeCloseTo(2, 3);
+    expect(hit.distance).toBeCloseTo(0.3, 3);
+    expect(nearestOnSeams(legs, near(4.5, 2.1), 1)!.leg).toBe(1);
+    expect(nearestOnSeams(legs, near(2.2, 4.4), 1)!.seam).toBe(1);
+  });
+  it('returns nothing beyond the radius, and can skip a seam', () => {
+    expect(nearestOnSeams(legs, near(3, 3.2), 0.5)).toBeUndefined();
+    expect(nearestOnSeams(legs, near(1.4, 2.3), 1, 0)).toBeUndefined();
+    expect(nearestOnSeams(legs, near(1.4, 2.3), 3, 0)!.seam).toBe(1);
+  });
+  it('takes the distance the caller gives (not space)', () => {
+    const byX = (p: Vec3) => Math.abs(p[0] - 4.8);
+    expect(nearestOnSeams(legs, byX, 0.01)!.at[0]).toBeCloseTo(4.8, 3);
+  });
+  it('inserting a control point puts it in the right place in the list and keeps the path the same length', () => {
+    const seam: Seam = { points: [...seams[0].points], closed: false };
+    const before = polylineLength(g.seamPath(m.positions, seam));
+    const p = insertControlPoint(m, seam, 0, [1.4, 2, 0]);
+    expect(seam.points).toHaveLength(4);
+    expect(seam.points[1]).toBe(p);
+    expect(pointOnSurface(m, p)[0]).toBeCloseTo(1.4, 9);
+    expect(polylineLength(g.seamPath(m.positions, seam))).toBeCloseTo(before, 9);
+  });
+  it('on a closed seam the last leg inserts at the end', () => {
+    const seam: Seam = { points: [at(1, 1), at(5, 1), at(3, 5)], closed: true };
+    const last = g.seamLegs(m.positions, seam).length - 1;
+    const p = insertControlPoint(m, seam, last, [2, 3, 0]);
+    expect(seam.points[3]).toBe(p);
+    expect(seam.points).toHaveLength(4);
   });
 });

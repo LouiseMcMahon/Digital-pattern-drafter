@@ -211,6 +211,26 @@ try {
   }
   if (frontSides.some((e) => !sharedSeams.includes(e.seam) && e.shared !== undefined)) fail('a seam only one panel touches was reported as shared');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panels-front-back.png' });
+
+  // A new seam can start in the middle of an existing one: the click snaps to the seam's path and the seam gains a
+  // control point there (so the two meet, and a panel can be cut on both sides).
+  await page.click('#seam-clear');
+  await page.click('#panel-clear');
+  await page.evaluate(() => {
+    window.setView('front');
+    window.seamFromSpecs([{ origin: [-10, 125, 300], dir: [0, 0, -1] }, { origin: [10, 125, 300], dir: [0, 0, -1] }], false);
+  });
+  await page.waitForTimeout(300);
+  const mid = await page.evaluate(() => window.seamPathPoint(0, 0.3));
+  const at30 = await page.evaluate((p) => window.screenOfPoint(p), mid);
+  await page.click('#seam-new'); // the first seam is still the one being drawn: start another
+  await page.mouse.click(at30.x + 2, at30.y + 2);
+  if (!(await snapNote()).includes('seam 1')) fail(`a click on a seam did not snap to it: "${await snapNote()}"`);
+  await page.mouse.click(at30.x + 2, at30.y + 90);
+  const joined = await page.evaluate(() => window.seamState());
+  if (joined.length !== 2 || joined[0].points.length !== 3 || joined[1].points.length !== 2) fail(`expected the first seam to gain a control point and a second seam of two points: ${JSON.stringify(joined.map((q) => q.points.length))}`);
+  const shared = joined[0].points[1].map((v, i) => v - joined[1].points[0][i]);
+  if (Math.hypot(...shared) > 1e-6) fail('the new seam does not start exactly on the first seam');
   await page.uncheck('#draw');
 
   // Failure path: if the fitting worker cannot load the body model, the page must say so and recover,

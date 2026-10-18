@@ -8,7 +8,7 @@ import type { FitTargets } from './core/fit';
 import { flatten } from './core/flatten';
 import { boundaryLoops, extractSubmesh } from './core/mesh';
 import { FIXTURES } from './core/fixtures';
-import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, polylineLength, pointOnSurface, raycast, snapPoint } from './core/seam';
+import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
 
@@ -107,6 +107,8 @@ let graph: SurfaceGraph;
 let seams: Seam[] = [];
 // Named places the seam points snap to (neck and shoulder points, bust apex, ...), re-found on every body.
 let landmarks: SnapTarget[] = [];
+// The path of every leg of every seam (control point to control point), for snapping to the middle of a seam.
+let seamLegs: number[][][] = [];
 
 /** Remove an object and free its GPU resources (geometries and materials are not freed by removal). */
 function disposeTree(o: THREE.Object3D) {
@@ -169,13 +171,16 @@ function show(params: BodyParams) {
 const bodyMesh = () => ({ positions: shapePositions, triangles: body.faces });
 
 function drawSeams() {
+  seamLegs = [];
   for (const c of [...seamGroup.children]) { seamGroup.remove(c); disposeTree(c); }
   const m = bodyMesh();
   const rows: string[] = [];
   seams.forEach((seam, i) => {
     const active = i === seams.length - 1;
     const color = active ? 0xd01040 : 0x1060ff;
-    const path = graph.seamPath(shapePositions, seam);
+    const legs = graph.seamLegs(shapePositions, seam);
+    seamLegs[i] = legs;
+    const path = seam.points.length === 1 ? [...pointOnSurface(m, seam.points[0])] : legs.flatMap((leg, k) => (k === 0 ? leg : leg.slice(3)));
     if (path.length >= 6) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(path), 3));
@@ -329,14 +334,21 @@ function targets(skip?: { seam: number; index: number }): SnapTarget[] {
  */
 function snapAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>, skip?: { seam: number; index: number }) {
   const rect = renderer.domElement.getBoundingClientRect();
-  const visible = targets(skip).filter((t) => {
-    const v = new THREE.Vector3(...t.point).project(camera);
-    const px = rect.left + ((v.x + 1) / 2) * rect.width;
-    const py = rect.top + ((1 - v.y) / 2) * rect.height;
-    const hidden = Math.abs(camera.position.distanceTo(new THREE.Vector3(...t.point)) - hit.t) > 3;
-    return !hidden && Math.hypot(px - e.clientX, py - e.clientY) <= SNAP_PIXELS;
-  });
-  return snapPoint(bodyMesh(), hit.surface, visible, Infinity, SNAP_PIXELS * pixelCm(hit.at));
+  const onScreen = (p: [number, number, number]) => {
+    const v = new THREE.Vector3(...p).project(camera);
+    const hidden = Math.abs(camera.position.distanceTo(new THREE.Vector3(...p)) - hit.t) > 3;
+    return hidden ? Infinity : Math.hypot(rect.left + ((v.x + 1) / 2) * rect.width - e.clientX, rect.top + ((1 - v.y) / 2) * rect.height - e.clientY);
+  };
+  const mesh = bodyMesh();
+  // 1. a landmark or the end of another seam; 2. any point along another seam (a new junction); 3. a mesh vertex.
+  const visible = targets(skip).filter((t) => onScreen(t.point) <= SNAP_PIXELS);
+  const named = snapPoint(mesh, hit.surface, visible, Infinity, 0);
+  if (named.target) return { ...named, junction: undefined };
+  // A seam can end on its own earlier legs only through its control points, so the seam being drawn or dragged is skipped.
+  const own = skip ? skip.seam : activeSeam() && !activeSeam().closed ? seams.length - 1 : -1;
+  const along = nearestOnSeams(seamLegs, onScreen, SNAP_PIXELS, own);
+  if (along) return { point: closestSurfacePoint(mesh, along.at) as SurfacePoint, target: `seam ${along.seam + 1}`, junction: { seam: along.seam, leg: along.leg, at: along.at } };
+  return { point: snapToVertex(mesh, hit.surface, SNAP_PIXELS * pixelCm(hit.at)), target: undefined, junction: undefined };
 }
 /** The control point under the pointer, measured on screen like snapping is. */
 function grabAt(e: PointerEvent, hit: NonNullable<ReturnType<typeof pick>>) {
@@ -353,6 +365,7 @@ const setSnapNote = (name?: string) => { $('snap').textContent = name ? `Snapped
 // moving adds a point; anything else is the orbit control turning the view.
 let down: { x: number; y: number } | undefined;
 let dragging: { seam: number; index: number } | undefined;
+let draggedOnto: ReturnType<typeof snapAt>['junction']; // where a dragged point would join the middle of another seam, applied when it is dropped
 renderer.domElement.addEventListener('pointerdown', (e) => {
   down = { x: e.clientX, y: e.clientY };
   if (!drawing()) return;
@@ -378,6 +391,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     if (!hit) return;
     const snapped = snapAt(e, hit, dragging);
     seams[dragging.seam].points[dragging.index] = snapped.point;
+    draggedOnto = snapped.junction;
     setSnapNote(snapped.target);
     drawSeams(); // the panels are re-cut when the drag ends, not on every move
     render();
@@ -386,7 +400,14 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   renderer.domElement.style.cursor = hit && grabAt(e, hit) ? 'grab' : '';
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (dragging) { dragging = undefined; renderer.domElement.releasePointerCapture(e.pointerId); if (panels.length) refreshPanels(); return; }
+  if (dragging) {
+    if (draggedOnto) seams[dragging.seam].points[dragging.index] = insertControlPoint(bodyMesh(), seams[draggedOnto.seam], draggedOnto.leg, draggedOnto.at);
+    draggedOnto = undefined;
+    dragging = undefined;
+    renderer.domElement.releasePointerCapture(e.pointerId);
+    redrawSeams();
+    return;
+  }
   const start = down;
   down = undefined;
   if (!start || !body || !($<HTMLInputElement>('draw').checked || pickingPanel)) return;
@@ -403,7 +424,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
   if (!activeSeam() || activeSeam().closed) seams.push({ points: [], closed: false });
   const snapped = snapAt(e, hit);
-  activeSeam().points.push(snapped.point);
+  activeSeam().points.push(snapped.junction ? insertControlPoint(bodyMesh(), seams[snapped.junction.seam], snapped.junction.leg, snapped.junction.at) : snapped.point);
   setSnapNote(snapped.target);
   redrawSeams();
 });
@@ -458,6 +479,17 @@ const placeSpec = (spec: PointSpec): SurfacePoint => {
   panels.push({ seed: placeSpec(spec), horizontal: 0, vertical: 0 });
   refreshPanels();
   return outlines[outlines.length - 1];
+};
+(window as unknown as Record<string, unknown>).seamPathPoint = (seam: number, fraction: number) => {
+  const poly = graph.seamPath(shapePositions, seams[seam]);
+  const total = polylineLength(poly);
+  let remaining = fraction * total;
+  for (let i = 3; i < poly.length; i += 3) {
+    const l = Math.hypot(poly[i] - poly[i - 3], poly[i + 1] - poly[i - 2], poly[i + 2] - poly[i - 1]);
+    if (remaining <= l) { const t = l ? remaining / l : 0; return [0, 1, 2].map((k) => poly[i - 3 + k] + t * (poly[i + k] - poly[i - 3 + k])); }
+    remaining -= l;
+  }
+  return poly.slice(-3);
 };
 (window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
 $('seam-undo').onclick = () => {

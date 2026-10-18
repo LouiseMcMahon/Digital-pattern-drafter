@@ -331,17 +331,59 @@ export class SurfaceGraph {
     return straighten(positions, this.triangles, [{ kind: 'face', point: a }, ...mid, { kind: 'face', point: b }], this);
   }
 
+  /** The polyline of each leg of a seam (control point to control point; a closed seam has a last leg back to the first). */
+  seamLegs(positions: Float64Array, seam: Seam): number[][] {
+    const pts = seam.closed && seam.points.length > 2 ? [...seam.points, seam.points[0]] : seam.points;
+    return pts.slice(0, -1).map((p, i) => this.path(positions, p, pts[i + 1]));
+  }
+
   /** The polyline of a whole seam: the shortest path between each consecutive pair of control points. */
   seamPath(positions: Float64Array, seam: Seam): number[] {
+    if (seam.points.length === 1) return [...pointOnSurface({ positions, triangles: this.triangles }, seam.points[0])];
     const out: number[] = [];
-    const pts = seam.closed && seam.points.length > 2 ? [...seam.points, seam.points[0]] : seam.points;
-    if (pts.length === 1) return [...pointOnSurface({ positions, triangles: this.triangles }, pts[0])];
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const leg = this.path(positions, pts[i], pts[i + 1]);
-      out.push(...(i === 0 ? leg : leg.slice(3)));
-    }
+    this.seamLegs(positions, seam).forEach((leg, i) => out.push(...(i === 0 ? leg : leg.slice(3))));
     return out;
   }
+}
+
+/**
+ * The place on any seam's path nearest to something, under a caller-supplied distance (the viewer uses distance on
+ * screen), within `radius`: the seam, the leg it is on (between control points `leg` and `leg + 1`) and the point.
+ * Used to start or end a new seam in the middle of an existing one.
+ */
+export function nearestOnSeams(legs: readonly (readonly number[][])[], distance: (point: Vec3) => number, radius: number, skipSeam = -1): { seam: number; leg: number; at: Vec3; distance: number } | undefined {
+  let best: { seam: number; leg: number; at: Vec3; distance: number } | undefined;
+  legs.forEach((seamLegs, seam) => {
+    if (seam === skipSeam) return;
+    seamLegs.forEach((poly, leg) => {
+      for (let i = 0; i + 5 < poly.length; i += 3) {
+        const a: Vec3 = [poly[i], poly[i + 1], poly[i + 2]];
+        const b: Vec3 = [poly[i + 3], poly[i + 4], poly[i + 5]];
+        const along = (t: number): Vec3 => [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])];
+        const steps = Math.max(1, Math.ceil(len(sub(b, a)) / 0.5));
+        let [lo, hi] = [0, 1];
+        let [bt, bd] = [0, Infinity];
+        for (let k = 0; k <= steps; k++) { const d = distance(along(k / steps)); if (d < bd) { bd = d; bt = k / steps; } }
+        [lo, hi] = [Math.max(0, bt - 1 / steps), Math.min(1, bt + 1 / steps)];
+        for (let it = 0; it < 48; it++) { // the distance along a straight piece has one minimum: narrow in on it
+          const [m1, m2] = [lo + (hi - lo) / 3, hi - (hi - lo) / 3];
+          if (distance(along(m1)) < distance(along(m2))) hi = m2; else lo = m1;
+        }
+        const t = (lo + hi) / 2;
+        const d = distance(along(t));
+        if (d <= radius && (!best || d < best.distance)) best = { seam, leg, at: along(t), distance: d };
+      }
+    });
+  });
+  return best;
+}
+
+/** Puts a new control point on a seam's path, between its control points `leg` and `leg + 1`, without changing the path. */
+export function insertControlPoint(m: Mesh, seam: Seam, leg: number, at: Vec3): SurfacePoint {
+  const { tri, bary } = closestSurfacePoint(m, at);
+  const point = { tri, bary };
+  seam.points.splice(leg + 1, 0, point);
+  return point;
 }
 
 export function polylineLength(points: ArrayLike<number>): number {
