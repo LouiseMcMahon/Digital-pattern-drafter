@@ -426,7 +426,8 @@ const setSnapNote = (name?: string) => { $('snap').textContent = name ? `Snapped
 // moving adds a point; anything else is the orbit control turning the view.
 let down: { x: number; y: number } | undefined;
 let dragging: { seam: number; index: number } | undefined;
-let draggedOnto: ReturnType<typeof snapAt>['junction']; // where a dragged point would join the middle of another seam, applied when it is dropped
+let grabbedFrom: { x: number; y: number } | undefined; // where the press on a control point began, to tell a click from a drag
+let draggedOnto:ReturnType<typeof snapAt>['junction']; // where a dragged point would join the middle of another seam, applied when it is dropped
 renderer.domElement.addEventListener('pointerdown', (e) => {
   down = { x: e.clientX, y: e.clientY };
   if (!drawing()) return;
@@ -435,6 +436,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (!grab) return;
   e.stopImmediatePropagation(); // capture phase: the orbit control never sees this press
   down = undefined;
+  grabbedFrom = { x: e.clientX, y: e.clientY };
   if (e.shiftKey) {
     seams[grab.seam].points.splice(grab.index, 1);
     if (seams[grab.seam].points.length < 3) seams[grab.seam].closed = false;
@@ -468,6 +470,18 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
   if (dragging) {
+    const clicked = grabbedFrom && Math.hypot(e.clientX - grabbedFrom.x, e.clientY - grabbedFrom.y) <= 4;
+    grabbedFrom = undefined;
+    // A click (not a drag) on the first point of the seam being drawn closes it.
+    if (clicked && dragging.index === 0 && dragging.seam === seams.length - 1 && !activeSeam().closed && activeSeam().points.length > 1) {
+      activeSeam().closed = true;
+      draggedOnto = undefined;
+      dragging = undefined;
+      renderer.domElement.releasePointerCapture(e.pointerId);
+      setSnapNote();
+      redrawSeams();
+      return;
+    }
     if (draggedOnto) seams[dragging.seam].points[dragging.index] = insertControlPoint(bodyMesh(), seams[draggedOnto.seam], draggedOnto.leg, draggedOnto.at);
     draggedOnto = undefined;
     dragging = undefined;
