@@ -50,14 +50,14 @@ All code and data must be usable if the app is published. No non-commercial or r
 Measurements are only comparable between people, and with a tape measure, if the body stands the same way. The body model's native rest pose (arms out and forward, elbows bent, legs splayed) is **not** used for anything the user sees or any measurement. The default pose of the body everywhere (viewer, measurements, fitting, flattening, seam drawing) is the **standard tailor pose**:
 
 - Standing upright, weight even, looking straight ahead (head level).
-- **Arms hang by the sides, straight at the elbow, 10 degrees from vertical, out in the coronal plane**, so there is clear air under the arm and the underarm and armscye can be measured. Hands hang naturally (palms toward the body).
+- **Arms are held out from the sides, straight at the elbow, 45 degrees from vertical (an A-pose), in the coronal plane**, so there is clear air under the arm and the underarm and armscye can be measured. Hands hang naturally (palms toward the body).
 - **Legs vertical and straight** (thigh and shank both vertical), feet hip-width apart, as wide as the hips stand. Feet flat on the floor.
 - Soles on y = 0.
 
 The pose is defined in one place (`src/core/pose.ts`, `TAILOR_POSE` and `TailorPoseRig`) and applied inside `BodyModel.evaluate`. `evaluate(..., { pose: 'rest' })` still gives the native rest pose for debugging and for the baking tool, but nothing user-facing may use it.
 
 **Acceptance (tested in `src/core/pose.test.ts`)**
-- Upper arm and forearm directions are within 0.5 degrees of 10 degrees from vertical, in the coronal plane, for every body in the fixtures.
+- Upper arm and forearm directions are within 0.5 degrees of 45 degrees from vertical, in the coronal plane, for every body in the fixtures.
 - Thigh and shank are within 0.5 degrees of vertical.
 - The soles are on y = 0 and the feet keep their flat orientation (toes and ankle heights unchanged by the pose).
 - Posing does not change bone lengths (shoulder-to-elbow, elbow-to-wrist, hip-to-knee, knee-to-ankle) by more than 0.1 cm.

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import type { BodyModel, BodyParams, BodyShape } from './bodyModel';
 import { loadBodyFromDisk } from './loadBodyNode';
 import { MEASUREMENT_NAMES, Measurer } from './measure';
+import { TAILOR_POSE } from './pose';
 import { goldenParams } from './testBodies';
 
 /**
@@ -38,10 +39,12 @@ function worstDifference(other: Measurer): { name: string; cm: number } {
   return worst;
 }
 
+const ARM = TAILOR_POSE.armDegreesFromVertical;
+
 describe('landmark detection is stable', () => {
   const small: [string, () => BodyShape][] = [
-    ['arms 1 degree out', () => body.evaluate({}, { armDegrees: 11 })],
-    ['arms 1 degree in', () => body.evaluate({}, { armDegrees: 9 })],
+    ['arms 1 degree out', () => body.evaluate({}, { armDegrees: ARM + 1 })],
+    ['arms 1 degree in', () => body.evaluate({}, { armDegrees: ARM - 1 })],
     ['mean shifted 0.1 sd along component 0', () => body.evaluate({ z: [0.1] })],
     ['mean shifted 0.1 sd along component 1', () => body.evaluate({ z: [0, -0.1] })],
     ['mean shifted 0.1 sd along component 2', () => body.evaluate({ z: [0, 0, 0.1] })],
@@ -52,8 +55,8 @@ describe('landmark detection is stable', () => {
   });
 
   const large: [string, () => BodyShape][] = [
-    ['arms 3 degrees out', () => body.evaluate({}, { armDegrees: 13 })],
-    ['arms 3 degrees in', () => body.evaluate({}, { armDegrees: 7 })],
+    ['arms 3 degrees out', () => body.evaluate({}, { armDegrees: ARM + 3 })],
+    ['arms 3 degrees in', () => body.evaluate({}, { armDegrees: ARM - 3 })],
     ['mean shifted 0.4 sd along component 0', () => body.evaluate({ z: [0.4] })],
     ['mean shifted 0.4 sd along component 1', () => body.evaluate({ z: [0, -0.4] })],
     ['mean shifted 0.4 sd along component 2', () => body.evaluate({ z: [0, 0, 0.4] })],
@@ -69,7 +72,7 @@ describe('measurements move gently with the pose', () => {
   it('no measurement changes by more than 0.3 cm for one degree of arm swing', () => {
     for (const b of BODIES) {
       const ref = reference.measure(shapes[b]);
-      for (const deg of [9, 11]) {
+      for (const deg of [ARM - 1, ARM + 1]) {
         const m = reference.measure(body.evaluate(params[b], { armDegrees: deg }));
         for (const n of MEASUREMENT_NAMES) expect(Math.abs(m[n] - ref[n]), `${n} on ${b} at ${deg} degrees`).toBeLessThanOrEqual(0.3);
       }

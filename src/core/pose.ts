@@ -9,8 +9,8 @@ export type PoseName = 'tailor' | 'rest';
 
 /** Standard tailor pose parameters. Change these only together with REQUIREMENTS.md R5 and the golden files. */
 export const TAILOR_POSE = {
-  /** Arms hang this far from vertical, out to the sides in the coronal plane (clear of the torso so the underarm can be measured). */
-  armDegreesFromVertical: 10,
+  /** Arms are held this far from vertical, out to the sides in the coronal plane (an A-pose: clear of the torso so the underarm can be measured). */
+  armDegreesFromVertical: 45,
 } as const;
 
 type V3 = [number, number, number];
@@ -57,7 +57,7 @@ export function rotationBetween(from: V3, to: V3): M3 {
 
 /**
  * Moves the model's rest pose into the tailor pose with rigid joint rotations blended by skinning
- * weight: arms hang `armDegreesFromVertical` from vertical with straight elbows; legs are vertical and
+ * weight: arms are held `armDegreesFromVertical` from vertical with straight elbows; legs are vertical and
  * straight (feet hip-width apart, as the hips stand); feet keep their flat orientation.
  */
 export class TailorPoseRig {

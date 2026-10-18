@@ -16,7 +16,7 @@ const fromVertical = (a: J, b: J) => (Math.atan2(Math.hypot(b[0] - a[0], b[2] - 
 describe.each(names)('tailor pose: %s', (name) => {
   const params = () => goldenParams(name);
 
-  it('upper arm and forearm hang 10 degrees from vertical, straight, in the coronal plane', () => {
+  it('upper arm and forearm are held at the tailor-pose angle from vertical, straight, in the coronal plane', () => {
     const s = body.evaluate(params());
     for (const side of ['L', 'R'] as const) {
       const sh = body.joint(s, `upperarm01.${side}`);

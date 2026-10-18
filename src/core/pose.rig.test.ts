@@ -202,11 +202,11 @@ describe('TailorPoseRig on a synthetic skeleton (arm and leg, both sides)', () =
     expect(Array.from(shape.positions)).toEqual(before);
   });
 
-  it('the arm angle is a parameter: 0 degrees hangs the arm straight down; 20 degrees swings it out further', () => {
+  it('the arm angle is a parameter: 0 degrees hangs the arm straight down; a wider angle swings it out further', () => {
     const zero = new TailorPoseRig(body, 0).apply(shape);
     const wr = joint(zero, 'wrist.L');
     expect(wr[0]).toBeCloseTo(ARM_ORIGIN.L.sh[0], 9);
-    const wide = joint(new TailorPoseRig(body, 20).apply(shape), 'wrist.L');
+    const wide = joint(new TailorPoseRig(body, TAILOR_POSE.armDegreesFromVertical + 10).apply(shape), 'wrist.L');
     expect(wide[0]).toBeGreaterThan(joint(posed, 'wrist.L')[0]);
   });
 
