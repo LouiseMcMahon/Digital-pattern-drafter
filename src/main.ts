@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
-import { GUIDE_RINGS, ringLandmarks } from './core/guides';
+import { GUIDE_RINGS, centreLines, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -203,6 +203,11 @@ function show(params: BodyParams) {
     guides.push({ name: `${g.label} line`, points: [...ring.points, ring.points[0], ring.points[1], ring.points[2]] });
     ringTargets.push(...ringLandmarks(g.label, ring.points));
   }
+  const markY = (n: string) => info.marks.find((k) => k.name === n)?.point[1];
+  const neckY = [markY('neck point L'), markY('neck point R')].filter((y): y is number => y !== undefined);
+  const hipY = markY('hip level'), napeY = markY('nape C7');
+  if (hipY !== undefined && napeY !== undefined && neckY.length)
+    guides.push(...centreLines(shapePositions, body.faces, hipY, neckY.reduce((a, b) => a + b) / neckY.length, napeY));
   drawLines($<HTMLInputElement>('lines').checked ? info : undefined);
   drawLandmarks();
   drawSeams();
