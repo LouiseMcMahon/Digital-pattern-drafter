@@ -19,6 +19,10 @@
   .head { padding: 14px 14px 8px; }
   .head h1 { font-size: 15px; margin: 0; letter-spacing: .01em; }
   .head p { margin: 2px 0 0; color: var(--muted); }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  .tabs button { flex: 1; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 9px 8px; font-weight: 600; color: var(--muted); }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); background: none; }
+  .tabpane[hidden] { display: none; }
   details { border-top: 1px solid var(--line); }
   summary { cursor: pointer; padding: 10px 14px; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 8px; user-select: none; }
   summary::-webkit-details-marker { display: none; }
