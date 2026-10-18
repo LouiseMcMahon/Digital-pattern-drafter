@@ -623,3 +623,41 @@ describe('nearestOnSeams and insertControlPoint', () => {
     expect(seam.points).toHaveLength(4);
   });
 });
+
+describe('nearestOnSeams on hand-made legs', () => {
+  const dist3 = (target: Vec3) => (p: Vec3) => Math.hypot(p[0] - target[0], p[1] - target[1], p[2] - target[2]);
+  it('finds the closest point on a slanted 3D segment in all three coordinates', () => {
+    const legs = [[[0, 0, 0, 4, 3, 12]]]; // one seam, one leg, one segment of length 13
+    const P: Vec3 = [3, 4, 5];
+    const d = [4, 3, 12];
+    const t = (P[0] * d[0] + P[1] * d[1] + P[2] * d[2]) / (d[0] ** 2 + d[1] ** 2 + d[2] ** 2);
+    const hit = nearestOnSeams(legs, dist3(P), 20)!;
+    expect(hit.at[0]).toBeCloseTo(t * 4, 6);
+    expect(hit.at[1]).toBeCloseTo(t * 3, 6);
+    expect(hit.at[2]).toBeCloseTo(t * 12, 6);
+    expect(hit.distance).toBeCloseTo(Math.hypot(P[0] - hit.at[0], P[1] - hit.at[1], P[2] - hit.at[2]), 9);
+  });
+  it('finds a narrow window of nearness on a long segment (a metric that is infinite where the seam is hidden)', () => {
+    const legs = [[[0, 0, 0, 6, 0, 0]]];
+    const visibleOnly = (p: Vec3) => (p[0] >= 4.0 && p[0] <= 4.6 ? Math.abs(p[0] - 4.3) : Infinity);
+    const hit = nearestOnSeams(legs, visibleOnly, 1)!;
+    expect(hit.at[0]).toBeCloseTo(4.3, 4);
+  });
+  it('compares segments of one leg and legs of one seam: the nearest wins wherever it is', () => {
+    const legs = [[[0, 0, 0, 2, 0, 0, 2, 2, 0], [2, 2, 0, 5, 2, 0]], [[0, 5, 0, 5, 5, 0]]];
+    expect(nearestOnSeams(legs, dist3([1, 0.2, 0]), 1)).toMatchObject({ seam: 0, leg: 0 });
+    expect(nearestOnSeams(legs, dist3([2.2, 1.5, 0]), 1)).toMatchObject({ seam: 0, leg: 0 });
+    expect(nearestOnSeams(legs, dist3([4, 2.1, 0]), 1)).toMatchObject({ seam: 0, leg: 1 });
+    expect(nearestOnSeams(legs, dist3([3, 4.6, 0]), 1)).toMatchObject({ seam: 1, leg: 0 });
+  });
+  it('accepts a distance exactly equal to the radius, and keeps the first of two equally near places', () => {
+    const legs = [[[0, 0, 0, 1, 0, 0]], [[0, 0, 0, 1, 0, 0]]];
+    expect(nearestOnSeams(legs, () => 0.25, 0.25)).toMatchObject({ seam: 0 });
+    expect(nearestOnSeams(legs, () => 0.25, 0.2499)).toBeUndefined();
+  });
+  it('a segment shorter than the sampling step is still searched, including its end', () => {
+    const legs = [[[0, 0, 0, 0.1, 0, 0]]];
+    expect(nearestOnSeams(legs, (p) => Math.abs(p[0] - 0.1), 1)!.at[0]).toBeCloseTo(0.1, 6);
+    expect(nearestOnSeams(legs, (p) => Math.abs(p[0] - 0), 1)!.at[0]).toBeCloseTo(0, 6);
+  });
+});
