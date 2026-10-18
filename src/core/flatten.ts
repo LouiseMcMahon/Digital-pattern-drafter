@@ -16,7 +16,18 @@ export interface FlattenResult {
   /** Root-mean-square error of flat edge lengths against the eased 3D lengths, as a fraction of those lengths (length-weighted). */
   rmsEdgeError: number;
   flippedTriangles: number;
+  /**
+   * How much the piece is stretched or compressed: the 98th percentile of |flat length / eased 3D length - 1| over its
+   * edges (very short edges, a seam passing close to a vertex, are left out). A piece lies flat when this is within
+   * FLATTEN_TOLERANCE; above it the surface is too curved to flatten and needs darts or more seams (REQUIREMENTS.md R7).
+   */
+  worstStrain: number;
+  /** Per vertex: the mean over its edges of (flat length / eased 3D length - 1): positive where stretched, negative where compressed. */
+  vertexStrain: Float64Array;
 }
+
+/** The most a pattern piece may be stretched or compressed to count as flat (0.5%). REQUIREMENTS.md R7. */
+export const FLATTEN_TOLERANCE = 0.005;
 
 /**
  * Local frame on the surface: horizontal follows the weft (perpendicular to
@@ -232,8 +243,18 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     tt += target[k] ** 2;
   }
 
+  const strain = ea.map((a, k) => Math.hypot(uv[2 * eb[k]] - uv[2 * a], uv[2 * eb[k] + 1] - uv[2 * a + 1]) / target[k] - 1);
+  const vertexSum = new Float64Array(n);
+  const vertexEdges = new Float64Array(n);
+  ea.forEach((a, k) => { vertexSum[a] += strain[k]; vertexSum[eb[k]] += strain[k]; vertexEdges[a]++; vertexEdges[eb[k]]++; });
+  const vertexStrain = vertexSum.map((v, i) => (vertexEdges[i] ? v / vertexEdges[i] : 0));
+  const sorted = [...target].sort((p, q) => p - q);
+  const typical = sorted[Math.floor(sorted.length / 2)] ?? 0;
+  const counted = strain.filter((_, k) => target[k] >= 0.25 * typical).map(Math.abs).sort((p, q) => p - q);
+  const worstStrain = counted.length ? counted[Math.min(counted.length - 1, Math.floor(0.98 * counted.length))] : 0;
+
   const flipped = countFlips(mesh, uv);
-  return { uv, rmsEdgeError: Math.sqrt(se / tt), flippedTriangles: flipped };
+  return { uv, rmsEdgeError: Math.sqrt(se / tt), flippedTriangles: flipped, worstStrain, vertexStrain };
 }
 
 /** Rotate the layout so +y follows the 3D up axis (centred on its centroid). */

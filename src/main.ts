@@ -5,7 +5,7 @@ import { mirrorSeam } from './core/mirror';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
 import type { FitTargets } from './core/fit';
-import { flatten } from './core/flatten';
+import { FLATTEN_TOLERANCE, flatten } from './core/flatten';
 import { boundaryLoops, extractSubmesh } from './core/mesh';
 import { FIXTURES } from './core/fixtures';
 import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
@@ -207,6 +207,15 @@ let outlines: [number, number][][] = []; // the flat outline of each panel, for 
 const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
 const MAX_PANEL_SHARE = 0.6; // a region bigger than this share of the body is not enclosed by the seams
 
+/** Strain colours: red where a piece would have to stretch to lie flat, blue where it would have to squeeze, near-white where it fits. */
+function strainRgb(strain: number): [number, number, number] {
+  const t = Math.max(-1, Math.min(1, strain / 0.03));
+  const target: [number, number, number] = t >= 0 ? [0.84, 0.15, 0.16] : [0.12, 0.47, 0.71];
+  const base: [number, number, number] = [0.92, 0.92, 0.92];
+  return base.map((b, i) => b + (target[i] - b) * Math.abs(t)) as [number, number, number];
+}
+const strainCss = (strain: number) => `rgb(${strainRgb(strain).map((v) => Math.round(255 * v)).join(',')})`;
+
 function derivePanels() {
   const original = bodyMesh();
   const cut = cutMesh(original, graph, seams);
@@ -241,17 +250,33 @@ function refreshPanels() {
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<label>Panel ${i + 1} ease % across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal" style="width:48px"></label> <label>down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical" style="width:48px"></label> <button data-delete-panel="${i}">Remove</button>`;
     if (!d.sub) { rows.push(`<span style="color:#c00">${ease}<br>${d.error}</span>`); return; }
+    const flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    const tooCurved = flat.worstStrain > FLATTEN_TOLERANCE;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(d.cut.mesh.positions), 3));
     g.setIndex(new THREE.BufferAttribute(Uint32Array.from(d.triangles.flatMap((t) => [0, 1, 2].map((k) => d.cut.mesh.triangles[3 * t + k]))), 1));
-    panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
-    const flat = flatten(d.sub.mesh, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
+    if (tooCurved) { // colour the piece by how much it would have to stretch (red) or squeeze (blue) to lie flat
+      const colors = new Float32Array(d.cut.mesh.positions.length);
+      d.sub.vertexMap.forEach((cutVertex, subVertex) => { colors.set(strainRgb(flat.vertexStrain[subVertex]), 3 * cutVertex); });
+      g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
+    panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: tooCurved ? 0xffffff : color, vertexColors: tooCurved, transparent: true, opacity: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
     const ox = x; // where this panel starts in the flat view
     const xs = d.loop.map((v) => flat.uv[2 * v]);
     const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     outlines.push(d.loop.map((v) => [flat.uv[2 * v], flat.uv[2 * v + 1]] as [number, number]));
-    shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map((v) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`).join('L')}Z"/>`);
+    const at = (v: number) => `${(flat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - flat.uv[2 * v + 1]).toFixed(2)}`;
+    if (tooCurved) { // the flat piece too, coloured by stretch, with a red outline: this one is not a valid pattern piece
+      const tri = d.sub.mesh.triangles;
+      for (let t = 0; t < tri.length; t += 3) {
+        const mean = (flat.vertexStrain[tri[t]] + flat.vertexStrain[tri[t + 1]] + flat.vertexStrain[tri[t + 2]]) / 3;
+        shapes.push(`<path fill="${strainCss(mean)}" stroke="${strainCss(mean)}" stroke-width="0.05" d="M${at(tri[t])}L${at(tri[t + 1])}L${at(tri[t + 2])}Z"/>`);
+      }
+      shapes.push(`<path fill="none" stroke="#c00" stroke-width="0.5" stroke-dasharray="1.2 0.8" d="M${d.loop.map(at).join('L')}Z"/>`);
+    } else {
+      shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map(at).join('L')}Z"/>`);
+    }
     x += x1 - x0 + 4;
     top = Math.max(top, y1 - y0);
     const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
@@ -264,8 +289,11 @@ function refreshPanels() {
       const mid = subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!;
       labels.push(`<text x="${(flat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - flat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
     }
+    const verdict = tooCurved
+      ? `<span style="color:#c00"><b>This piece cannot lie flat.</b> It would have to stretch or squeeze by up to ${(100 * flat.worstStrain).toFixed(1)}% (the limit is ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span><br>`
+      : `<span style="color:#080">Lies flat (worst stretch ${(100 * flat.worstStrain).toFixed(1)}%).</span><br>`;
     const warn = flat.flippedTriangles > 0 ? ` <span style="color:#c00">${flat.flippedTriangles} flipped triangles</span>` : '';
-    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; edge length error ${(100 * flat.rmsEdgeError).toFixed(1)}%${warn}<br>${sides.join('<br>')}</span>`);
+    rows.push(`${ease}<br><span style="color:#555">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${warn}<br>${verdict}${sides.join('<br>')}</span>`);
   });
   $('panels').innerHTML = rows.join('<br>');
   svg.style.display = shapes.length ? 'block' : 'none';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { uniformEase } from './ease';
-import { countFlips, flatten } from './flatten';
+import { FLATTEN_TOLERANCE, countFlips, flatten } from './flatten';
 import type { Mesh } from './mesh';
 
 /** Half cylinder (radius 14.3 -> half circumference ~45 cm), a developable surface. */
@@ -255,5 +255,38 @@ describe('countFlips', () => {
   });
   it('is 0 for an empty mesh', () => {
     expect(countFlips({ positions: new Float64Array(0), triangles: new Uint32Array(0) }, new Float64Array(0))).toBe(0);
+  });
+});
+
+describe('worstStrain (R7: a piece must lie flat)', () => {
+  it('is 0.5%', () => expect(FLATTEN_TOLERANCE).toBe(0.005));
+  it('is far under the tolerance for a flat wall and a half cylinder (developable: they lie flat)', () => {
+    expect(flatten(wall(6, 5), { ease: uniformEase(0, 0) }).worstStrain).toBeLessThan(0.001);
+    expect(flatten(halfCylinder(), { ease: uniformEase(0, 0) }).worstStrain).toBeLessThan(0.002);
+  });
+  const sphere = (() => {
+    const n = 5;
+    const positions: number[] = [];
+    for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) { const x = (i * 12) / n, y = (j * 12) / n; positions.push(x, y, Math.sqrt(900 - x * x - y * y)); }
+    const id = (i: number, j: number) => (j + n) * (2 * n + 1) + (i + n);
+    const tris: number[] = [];
+    for (let j = -n; j < n; j++) for (let i = -n; i < n; i++) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+    return { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) } as Mesh;
+  })();
+  it('is over the tolerance for a patch of a sphere: it cannot lie flat', () => {
+    const r = flatten(sphere, { ease: uniformEase(0, 0) });
+    expect(r.worstStrain).toBeGreaterThan(FLATTEN_TOLERANCE);
+    expect(r.worstStrain).toBeLessThan(0.1);
+  });
+  it('measures against the eased length: asking for 10% ease on a flat wall is not stretch', () => {
+    expect(flatten(wall(6, 5), { ease: uniformEase(10, -5) }).worstStrain).toBeLessThan(0.001);
+  });
+  it('vertexStrain has one value per vertex, about 0 on a flat wall and both signs on a curved patch', () => {
+    const flat = flatten(wall(4, 3), { ease: uniformEase(0, 0) });
+    expect(flat.vertexStrain).toHaveLength(12);
+    for (const v of flat.vertexStrain) expect(Math.abs(v)).toBeLessThan(0.001);
+    const curved = flatten(sphere, { ease: uniformEase(0, 0) });
+    expect(Math.max(...curved.vertexStrain)).toBeGreaterThan(0.002);
+    expect(Math.min(...curved.vertexStrain)).toBeLessThan(-0.002);
   });
 });

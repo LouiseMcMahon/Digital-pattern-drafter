@@ -32,6 +32,15 @@ Pattern making for bodies that off-the-shelf patterns don't fit is a core purpos
 
 Panels are pulled off the 3D form along seams the user draws. Ease is a plain percentage, horizontal and vertical, positive or negative. Stretch fabrics are handled by choosing negative ease. See PLAN.md.
 
+## R7. A pattern piece must lie flat: no stretching
+
+Most fabrics do not stretch, so a piece that only flattens by being stretched or squeezed is useless: cut in real fabric it will not fit the body. Stretch fabrics are handled by the user's ease percentage (R3), never by hiding distortion.
+
+- A flat piece must match the body: every edge within **0.5%** of its length on the body (times the ease the user asked for). 0.5% is the allowance for the numerics of the flattener; it is not a design margin.
+- Seams are never stretched at all: a seam shared by two pieces is the same length on both (within 0.1 cm), so the pieces fit together.
+- A curved surface (the bust, the shoulder, a hip) cannot be flattened. When a piece the user has drawn cannot meet the 0.5% limit, the app **says so**: it names the worst stretch, shows where (red = stretched, blue = squeezed, on the body and on the flat piece), and tells the user to add a dart or more seam lines. It does not present the piece as a finished pattern.
+- Tests: `flatten.test.ts` (`worstStrain`: developable surfaces within the limit, a sphere patch over it), `panels.integration.test.ts` (shared seams), the browser smoke test (a piece over the bust is reported as unable to lie flat).
+
 ## R4. Publishable
 
 All code and data must be usable if the app is published. No non-commercial or research-only models or assets (SMPL, SMPL-X, STAR, Anny's SMPL-X topology). Keep third-party licence notices in the repo.
@@ -63,6 +72,7 @@ A change to the baked body, the pose, a measurement definition, a calibration of
 - R1: met for the fixtures in `src/core/fixtures.ts` (`npm test`), within 0.5 cm and usually < 0.1 cm. Definitions still need calibration against real people (see PLAN.md).
 - R2: tall (188 cm) average/broad/narrow, petite and plus-size fixtures pass. Implausible proportions are flagged as warnings; measurements that cannot be met are listed, not hidden.
 - Measurement set: now 34 measurements including armscye depth, high bust, across back, across chest, shoulder length, shoulder to bust point, bust point height, waist to hip, crotch depth and length, shoulder to elbow, elbow to wrist and underarm to wrist. Conflicting inputs (arm length vs its two segments; crotch depth vs waist height minus inside leg) are flagged.
+- R7: implemented. `flatten()` reports `worstStrain` (98th percentile of edge stretch, limit `FLATTEN_TOLERANCE` = 0.5%) and a per-vertex strain; the viewer warns and shows the strain map for a piece over the limit. Not yet: suggesting where a dart or seam would fix it.
 - R5: implemented (`src/core/pose.ts`), default for all evaluation.
 - R6: golden measurement snapshots, pinned body-data hash, pose and measurement invariants, see ENGINEERING.md.
 - R4: Anny code is Apache-2.0 and its data CC0; see THIRD_PARTY_NOTICES.md.

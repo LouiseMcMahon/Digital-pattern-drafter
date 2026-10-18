@@ -144,8 +144,10 @@ try {
   await page.waitForFunction(() => document.getElementById('panels')?.textContent?.includes('cm flat'), null, { timeout: 60000 })
     .catch(async () => fail(`no panel was made from the closed seams: "${await page.$eval('#panels', (e) => e.textContent)}"`));
   const panelText = await page.$eval('#panels', (e) => e.textContent);
-  const dims = /([0-9.]+) x ([0-9.]+) cm flat, ([0-9]+) cm² on the body; edge length error ([0-9.]+)%/.exec(panelText);
-  if (!dims || !(dims[1] > 30 && dims[1] < 55 && dims[2] > 45 && dims[2] < 70 && dims[4] < 15)) fail(`the front torso panel has an implausible size or distortion: "${panelText}"`);
+  const dims = /([0-9.]+) x ([0-9.]+) cm flat, ([0-9]+) cm² on the body/.exec(panelText);
+  if (!dims || !(dims[1] > 30 && dims[1] < 55 && dims[2] > 45 && dims[2] < 70)) fail(`the front torso panel has an implausible size: "${panelText}"`);
+  // A front torso goes over the bust: it cannot lie flat without stretching, and the page must say so (R7), not hide it.
+  if (!/cannot lie flat/.test(panelText) || !/dart or more seam lines/.test(panelText)) fail(`a piece over the bust was not reported as unable to lie flat: "${panelText}"`);
   if (await page.$eval('#flat', (e) => getComputedStyle(e).display) === 'none') fail('the flat panel was not drawn');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panel-flat.png' });
 
