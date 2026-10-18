@@ -224,6 +224,26 @@ try {
   if (frontSides.some((e) => !sharedSeams.includes(e.seam) && e.shared !== undefined)) fail('a seam only one panel touches was reported as shared');
   await page.locator('#flat').screenshot({ path: 'e2e-out/panels-front-back.png' });
 
+  // Cloth simulation of the sewn front and back: ticking the view before running says it is out of date, clicking
+  // Simulate shows the spinner over the 3D view, and when it ends the overlay is gone and the cloth is reported.
+  const started = await page.evaluate(() => {
+    const tick = document.getElementById('cloth-on');
+    tick.checked = true;
+    tick.dispatchEvent(new Event('change'));
+    const stale = document.getElementById('panels').innerText.includes('out of date');
+    document.getElementById('cloth-run').click();
+    return { stale, overlay: document.querySelector('.busy').classList.contains('on') };
+  });
+  if (!started.stale) fail('a cloth view that has not been simulated should say it is out of date');
+  if (!started.overlay) fail('the spinner overlay did not show when Simulate cloth was clicked');
+  await page.waitForFunction(() => !document.querySelector('.busy').classList.contains('on') && document.getElementById('panels').innerText.includes('cloth simulation:'), null, { timeout: 900000 })
+    .catch(async () => fail(`the cloth simulation did not finish and report: "${await page.$eval('#panels', (e) => e.innerText)}"`));
+  const clothText = await page.$eval('#panels', (e) => e.innerText);
+  if (clothText.includes('out of date')) fail(`panels still out of date after simulating: "${clothText}"`);
+  if ((clothText.match(/cloth simulation:/g) ?? []).length !== 2) fail(`expected both panels to report the cloth simulation: "${clothText}"`);
+  await page.screenshot({ path: 'e2e-out/cloth.png' });
+  await page.evaluate(() => { const tick = document.getElementById('cloth-on'); tick.checked = false; tick.dispatchEvent(new Event('change')); });
+
   // A new seam can start in the middle of an existing one: the click snaps to the seam's path and the seam gains a
   // control point there (so the two meet, and a panel can be cut on both sides).
   await page.click('#seam-clear');

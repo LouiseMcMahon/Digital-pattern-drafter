@@ -5,7 +5,7 @@ import { flatten } from './flatten';
 import { loadBodyFromDisk } from './loadBodyNode';
 import { Measurer } from './measure';
 import { SurfaceField } from './bodyField';
-import { clothPattern } from './cloth';
+import { type ClothPiece, clothPatterns } from './cloth';
 import { drape, drapeSeams } from './drape';
 import { extractSubmesh } from './mesh';
 import { type Seam, type SurfacePoint, SurfaceGraph, closestSurfacePoint, raycast } from './seam';
@@ -53,6 +53,10 @@ async function build(ease: { front: [number, number]; back: [number, number] } =
   const cut = cutMesh(mesh, graph, seams);
   const bodyField = new SurfaceField(mesh);
   const taut = drapeSeams(cut);
+  // The cloth simulation takes seconds, so it runs only for the tests that ask, and for all the panels together: panels that share a seam are sewn together.
+  const pieces: ClothPiece[] = [];
+  let memo: ReturnType<typeof clothPatterns> | undefined;
+  const garment = () => (memo ??= clothPatterns(pieces, bodyField, { targets: taut.positions }));
   const panel = (seed: SurfacePoint, e: [number, number]) => {
     const triangles = regionFrom(cut, locateInCut(cut, mesh, seed));
     const sub = extractSubmesh(cut.mesh, triangles);
@@ -61,9 +65,8 @@ async function build(ease: { front: [number, number]; back: [number, number] } =
     sub.vertexMap.forEach((v, i) => boundary.set(taut.positions.slice(3 * v, 3 * v + 3), 3 * i));
     const draped = drape(sub.mesh, { boundary });
     const flatDraped = flatten(draped.mesh, { ease: uniformEase(e[0], e[1]) });
-    // The cloth simulation takes seconds, so it runs only for the panels a test asks about.
-    let memo: ReturnType<typeof clothPattern> | undefined;
-    const cloth = () => (memo ??= clothPattern(draped.mesh, flatDraped.uv, bodyField));
+    const piece: ClothPiece = { mesh: draped.mesh, flat: flatDraped.uv, vertexMap: sub.vertexMap };
+    pieces.push(piece);
     const subOf = new Map(sub.vertexMap.map((v, i) => [v, i]));
     const edges = panelEdges(cut, triangles)!.map((edge) => ({
       seam: edge.seam,
@@ -75,9 +78,10 @@ async function build(ease: { front: [number, number]; back: [number, number] } =
       body: edge.vertices.slice(1).reduce((t, v, k) => t + Math.hypot(...[0, 1, 2].map((c) => taut.positions[3 * v + c] - taut.positions[3 * edge.vertices[k] + c]) as [number, number, number]), 0),
       flat: edge.vertices.slice(1).reduce((t, v, k) => { const [a, b] = [subOf.get(edge.vertices[k])!, subOf.get(v)!]; return t + Math.hypot(flatDraped.uv[2 * a] - flatDraped.uv[2 * b], flatDraped.uv[2 * a + 1] - flatDraped.uv[2 * b + 1]); }, 0),
     }));
-    return { flat, flatDraped, draped, cloth, edges, drapedEdges, size: area(cut.mesh, triangles) };
+    return { flat, flatDraped, draped, piece, cloth: () => garment()[pieces.indexOf(piece)], vertexMap: sub.vertexMap, edges, drapedEdges, size: area(cut.mesh, triangles) };
   };
-  return { side: princess ? panel(front(14, 125), ease.front) : undefined, front: panel(front(0, 125), ease.front), back: panel(back(0, 125), ease.back) };
+  const panels = { side: princess ? panel(front(14, 125), ease.front) : undefined, front: panel(front(0, 125), ease.front), back: panel(back(0, 125), ease.back) };
+  return panels;
 }
 
 let princessResult: Awaited<ReturnType<typeof build>>;
@@ -130,19 +134,60 @@ describe('bodice front and back sharing seams (real body)', () => {
     expect(shoulderResult.side!.flatDraped.worstStrain).toBeLessThanOrEqual(shoulderResult.side!.flat.worstStrain);
     for (const p of [shoulderResult.front, shoulderResult.side!]) expect(p.flatDraped.flippedTriangles).toBe(0);
   });
-  it('the seams of a simulated cloth fall a little short of their lines, not far, and it never goes below the body', () => {
+  it('panels sewn together are one cloth: their shared seam vertices end up in the same place', () => {
+    const [centre, side] = [shoulderResult.front, shoulderResult.side!];
+    const sideAt = new Map(side.vertexMap.map((g, i) => [g, i]));
+    let shared = 0;
+    centre.vertexMap.forEach((g, i) => {
+      const j = sideAt.get(g);
+      if (j === undefined) return;
+      shared++;
+      for (let k = 0; k < 3; k++) expect(centre.cloth().mesh.positions[3 * i + k]).toBe(side.cloth().mesh.positions[3 * j + k]);
+    });
+    expect(shared).toBeGreaterThan(20); // the princess seam
+  }, 300_000);
+  it('a simulated cloth never goes below the body and its seams stay near their lines', () => {
     for (const p of [shoulderResult.front, shoulderResult.side!]) {
       const c = p.cloth();
-      expect(c.maxSeamError).toBeLessThan(2); // cm: the seams fall a little short of their lines, not far
+      expect(c.maxSeamError).toBeLessThan(2.5); // cm from the taut seam line
       for (const gap of c.gap) expect(gap).toBeGreaterThanOrEqual(0);
+      expect(c.flippedTriangles).toBe(0);
     }
-  }, 120_000);
-  it('a simulated cloth and its own flattening need little stretch: far less than the membrane drape, within about 0.5% for the princess panels', () => {
-    const [centre, side, whole] = [shoulderResult.front.cloth(), shoulderResult.side!.cloth(), result.front.cloth()];
-    expect(centre.worstStrain).toBeLessThan(0.005);
-    expect(side.worstStrain).toBeLessThan(0.008);
-    expect(whole.worstStrain).toBeLessThan(0.02);
-    expect(whole.worstStrain).toBeLessThan(0.2 * result.front.flatDraped.worstStrain);
-    for (const c of [centre, side, whole]) expect(c.flippedTriangles).toBe(0);
   }, 300_000);
+  it('sewn together, the cloth and its own flattening need little stretch: far less than the membrane drape', () => {
+    const [centre, side, front, back] = [shoulderResult.front.cloth(), shoulderResult.side!.cloth(), result.front.cloth(), result.back.cloth()];
+    expect(centre.worstStrain).toBeLessThan(0.004);
+    expect(side.worstStrain).toBeLessThan(0.012);
+    expect(front.worstStrain).toBeLessThan(0.03);
+    expect(back.worstStrain).toBeLessThan(0.015);
+    expect(front.worstStrain).toBeLessThan(0.3 * result.front.flatDraped.worstStrain);
+    for (const c of [front, back]) expect(c.flippedTriangles).toBe(0);
+  }, 600_000);
+  it('sewn panels give their shared seam the same length in their final flat patterns (so the garment can be sewn)', () => {
+    const [centre, side] = [shoulderResult.front, shoulderResult.side!];
+    const sideHas = new Set(side.vertexMap);
+    const key = (a: number, b: number) => Math.min(a, b) * 1e6 + Math.max(a, b);
+    /** Flat length of each edge whose both vertices are on the seam, by garment vertex pair. */
+    const seamEdgeLengths = (p: typeof centre) => {
+      const lengths = new Map<number, number>();
+      const t = p.piece.mesh.triangles;
+      const uv = p.cloth().uv;
+      for (let k = 0; k < t.length; k += 3) for (let e = 0; e < 3; e++) {
+        const [a, b] = [t[k + e], t[k + ((e + 1) % 3)]];
+        if (sideHas.has(p.vertexMap[a]) && sideHas.has(p.vertexMap[b])) lengths.set(key(p.vertexMap[a], p.vertexMap[b]), Math.hypot(uv[2 * a] - uv[2 * b], uv[2 * a + 1] - uv[2 * b + 1]));
+      }
+      return lengths;
+    };
+    const [lc, ls] = [seamEdgeLengths(centre), seamEdgeLengths(side)];
+    let [sumC, sumS, worst, shared] = [0, 0, 0, 0];
+    for (const [k, v] of lc) {
+      const w = ls.get(k);
+      if (w === undefined) continue;
+      sumC += v; sumS += w; shared++;
+      worst = Math.max(worst, Math.abs(v - w) / Math.max(v, 1e-9));
+    }
+    expect(shared).toBeGreaterThan(20);
+    expect(Math.abs(sumC - sumS) / sumC).toBeLessThan(0.005); // measured 0.05%: 57.14 cm and 57.17 cm
+    expect(worst).toBeLessThan(0.03); // measured 0.7% on the worst single edge
+  }, 600_000);
 });

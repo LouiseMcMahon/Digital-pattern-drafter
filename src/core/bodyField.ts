@@ -28,8 +28,8 @@ export class SurfaceField {
     for (let t = 0; t < triangleCount(mesh); t++) {
       const pts = [0, 1, 2].map((k) => getVertex(mesh, mesh.triangles[3 * t + k]));
       for (let k = 0; k < 3; k++) { this.box[6 * t + k] = Math.min(pts[0][k], pts[1][k], pts[2][k]); this.box[6 * t + 3 + k] = Math.max(pts[0][k], pts[1][k], pts[2][k]); }
-      const a = [0, 1, 2].map((k) => Math.floor((Math.min(pts[0][k], pts[1][k], pts[2][k]) - lo[k]) / cell));
-      const b = [0, 1, 2].map((k) => Math.floor((Math.max(pts[0][k], pts[1][k], pts[2][k]) - lo[k]) / cell));
+      const a = [0, 1, 2].map((k) => Math.floor((this.box[6 * t + k] - lo[k]) / cell));
+      const b = [0, 1, 2].map((k) => Math.floor((this.box[6 * t + 3 + k] - lo[k]) / cell));
       for (let x = a[0]; x <= b[0]; x++) for (let y = a[1]; y <= b[1]; y++) for (let z = a[2]; z <= b[2]; z++) {
         const key = this.key(x, y, z);
         const list = this.cells.get(key);
@@ -47,12 +47,11 @@ export class SurfaceField {
     let best = Infinity;
     let bestTri = -1;
     let bestBary: Vec3 = [1, 0, 0];
-    const maxRing = Math.max(...this.dims) + 2 + Math.max(0, ...c.map((v, k) => Math.max(-v, v - this.dims[k])));
-    for (let r = 0; r <= maxRing; r++) {
-      if (bestTri >= 0 && best <= (r - 1) * this.cell) break;
-      for (let x = c[0] - r; x <= c[0] + r; x++) for (let y = c[1] - r; y <= c[1] + r; y++) for (let z = c[2] - r; z <= c[2] + r; z++) {
-        if (Math.max(Math.abs(x - c[0]), Math.abs(y - c[1]), Math.abs(z - c[2])) !== r) continue;
-        if (x < 0 || y < 0 || z < 0 || x >= this.dims[0] || y >= this.dims[1] || z >= this.dims[2]) continue;
+    const reach = Math.max(...c.map((v, k) => Math.max(v, this.dims[k] - 1 - v))); // the ring at which the cube covers the whole grid
+    for (let r = 0; r <= reach; r++) {
+      if (bestTri >= 0 && best <= (r - 1) * this.cell) break; // everything in this ring is at least that far
+      // The cube of cells within r of the point's cell, clamped to the grid; cells seen in an earlier ring are skipped by the stamp.
+      for (let x = Math.max(0, c[0] - r); x <= Math.min(this.dims[0] - 1, c[0] + r); x++) for (let y = Math.max(0, c[1] - r); y <= Math.min(this.dims[1] - 1, c[1] + r); y++) for (let z = Math.max(0, c[2] - r); z <= Math.min(this.dims[2] - 1, c[2] + r); z++) {
         for (const t of this.cells.get(this.key(x, y, z)) ?? []) {
           if (this.stamp[t] === query) continue;
           this.stamp[t] = query;

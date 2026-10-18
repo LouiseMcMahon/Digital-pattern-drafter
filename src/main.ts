@@ -4,7 +4,7 @@ import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyMod
 import { GUIDE_RINGS, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { SurfaceField } from './core/bodyField';
-import { type ClothPatternResult, clothPattern } from './core/cloth';
+import { type ClothPatternResult, clothPatterns } from './core/cloth';
 import { drape, drapeSeams } from './core/drape';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -64,7 +64,10 @@ const hoverEl = document.createElement('div');
 hoverEl.id = 'hover';
 const snapEl = document.createElement('div');
 snapEl.id = 'snap';
-threeEl.append(viewbar, snapEl);
+const busyEl = document.createElement('div');
+busyEl.className = 'busy';
+busyEl.innerHTML = '<div class="spinner"></div><div id="busy-text">Simulating cloth…</div>';
+threeEl.append(viewbar, snapEl, busyEl);
 document.body.append(hoverEl);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
@@ -297,9 +300,10 @@ function strainRgb(strain: number): [number, number, number] {
 const strainCss = (strain: number) => `rgb(${strainRgb(strain).map((v) => Math.round(255 * v)).join(',')})`;
 
 // Cloth simulations take seconds, so they run only when asked for and are kept until the panel's shape changes.
-const clothCache = new Map<string, ClothPatternResult>();
+const clothCache = new Map<string, ClothPatternResult[]>();
 let simulateNow = false;
-const signature = (...arrays: ArrayLike<number>[]) => arrays.map((a) => { let h = 0; for (let i = 0; i < a.length; i++) h = (Math.imul(h, 31) + Math.round(a[i] * 1e4)) | 0; return `${a.length}:${h}`; }).join('/');
+// A key for a set of arrays (two independent 32-bit hashes of each, and its length) so a stale simulation is never shown for a changed panel.
+const signature = (...arrays: ArrayLike<number>[]) => arrays.map((a) => { let h1 = 0; let h2 = 2166136261; for (let i = 0; i < a.length; i++) { const x = Math.round(a[i] * 1e4); h1 = (Math.imul(h1, 31) + x) | 0; h2 = Math.imul(h2 ^ x, 16777619); } return `${a.length}:${h1}:${h2}`; }).join('/');
 const clothOn = () => ($<HTMLInputElement>('cloth-on')).checked;
 const drapeOn = () => ($<HTMLInputElement>('drape-on')).checked;
 const colourBy = () => ($<HTMLSelectElement>('panel-colour')).value;
@@ -323,7 +327,7 @@ function derivePanels() {
     const result = drapeOn() ? drape(sub.mesh, { boundary }) : { mesh: sub.mesh, gap: new Float64Array(sub.vertexMap.length) };
     const draped = result.mesh;
     const gap = result.gap;
-    return { panel, triangles, cut, size, sub, draped, gap, loop: loops[0], edges: panelEdges(cut, triangles) ?? [] };
+    return { panel, triangles, cut, taut, size, sub, draped, gap, loop: loops[0], edges: panelEdges(cut, triangles) ?? [] };
   });
 }
 
@@ -341,28 +345,29 @@ function refreshPanels() {
   // Which panels each seam is a side of: a seam with two panels is a shared seam line (sewn together).
   const panelsOfSeam = new Map<number, number[]>();
   derived.forEach((d, i) => d.edges?.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }));
+  // Flatten every panel first: the cloth simulation works on all of them together, sewn at the seams they share.
+  const flats = derived.map((d) => {
+    if (!d.sub) return { error: d.error };
+    try { return { flat: flatten(d.draped, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) }) }; } catch (err) { console.error(err); return { error: `This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.` }; }
+  });
+  const flattened = derived.map((_, i) => i).filter((i) => flats[i].flat);
+  const clothKey = clothOn() ? flattened.map((i) => signature(derived[i].draped!.positions, flats[i].flat!.uv, derived[i].sub!.vertexMap)).join('|') : '';
+  let garment = clothCache.get(clothKey);
+  if (clothOn() && !garment && simulateNow && flattened.length) {
+    garment = clothPatterns(flattened.map((i) => ({ mesh: derived[i].draped!, flat: flats[i].flat!.uv, vertexMap: derived[i].sub!.vertexMap })), bodyField(), { targets: derived[flattened[0]].taut!.positions });
+    if (clothCache.size >= 10) clothCache.clear();
+    clothCache.set(clothKey, garment);
+  }
   derived.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
     if (!d.sub) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
-    let flat: ReturnType<typeof flatten>;
-    try {
-      flat = flatten(d.draped, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) });
-    } catch (err) {
-      console.error(err);
-      rows.push(`<div class="item error">${ease}<span class="bad">This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.</span></div>`);
-      return;
-    }
-    // Cloth simulation: lay the flat pattern over the body keeping every edge its pattern length. What is left of
-    // stretch is real; where the pattern cannot reach the seam lines without stretching, the seam falls short instead.
-    const clothKey = clothOn() ? signature(d.draped.positions, flat.uv) : '';
-    let cloth = clothCache.get(clothKey);
-    if (clothOn() && !cloth && simulateNow) {
-      cloth = clothPattern(d.draped, flat.uv, bodyField());
-      if (clothCache.size >= 30) clothCache.clear();
-      clothCache.set(clothKey, cloth);
-    }
+    const flat = flats[i].flat;
+    if (!flat) { rows.push(`<div class="item error">${ease}<span class="bad">${flats[i].error}</span></div>`); return; }
+    // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
+    // pattern length. What is left of stretch is real; where the patterns cannot reach the seam lines without stretching, the seam falls short instead.
+    const cloth = garment?.[flattened.indexOf(i)];
     const clothStale = clothOn() && !cloth;
     const shape = cloth ? cloth.mesh : d.draped;
     const gap = cloth ? cloth.gap : d.gap;
@@ -439,12 +444,20 @@ $('drape-on').onchange = () => refreshPanels();
 $('cloth-on').onchange = () => refreshPanels();
 $('cloth-run').onclick = () => {
   const button = $('cloth-run');
+  if (panels.length === 0) { // nothing to simulate: say so rather than flash the overlay
+    button.textContent = 'Make a panel first';
+    setTimeout(() => { button.textContent = 'Simulate cloth (slow)'; }, 2000);
+    return;
+  }
   $<HTMLInputElement>('cloth-on').checked = true;
   button.textContent = 'Simulating…';
-  setTimeout(() => { // let the button repaint before the page gets busy
+  $('busy-text').textContent = `Simulating cloth for ${panels.length} panel${panels.length === 1 ? '' : 's'}…`;
+  busyEl.classList.add('on');
+  // The page is busy while it runs, so let the overlay paint first (two frames); the spinner's turn is a transform animation, which keeps going.
+  requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
     simulateNow = true;
-    try { refreshPanels(); } finally { simulateNow = false; button.textContent = 'Simulate cloth (slow)'; }
-  }, 30);
+    try { refreshPanels(); } finally { simulateNow = false; button.textContent = 'Simulate cloth (slow)'; busyEl.classList.remove('on'); }
+  }, 0)));
 };
 $('panel-colour').onchange = () => { $('lift-key').textContent = colourBy() === 'lift' ? 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).' : ''; refreshPanels(); };
 $('lift-key').textContent = 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).';
