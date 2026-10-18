@@ -1,13 +1,15 @@
 // End-to-end smoke test of the real page: build, serve, fit a 6'2" woman in a real browser, check the
 // page reports every measurement within 0.5 cm (R1) and nothing errors. `npm run build && npm run e2e`.
 // Set CHROMIUM_PATH to use a specific browser; otherwise Playwright's managed Chromium
-// (`npx playwright-core install chromium`).
+// (`npx playwright-core install chromium`); if that is not installed, an installed Chrome or Edge is used.
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 
 const PORT = 4179;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
+// Run vite's own script with this node: spawning `npx` fails on Windows (it is a .cmd file).
+const server = spawn(process.execPath, [fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url)), 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' });
 const stop = () => server.kill();
 process.on('exit', stop);
 
@@ -21,10 +23,14 @@ try {
     await new Promise((r) => setTimeout(r, 500));
     if (i === 59) fail('preview server did not start');
   }
-  browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || undefined,
-    args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
-  });
+  const options = { executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox', '--use-gl=swiftshader', '--enable-unsafe-swiftshader'] };
+  const useInstalled = !options.executablePath && !existsSync(chromium.executablePath()); // no managed Chromium: use Chrome, then Edge
+  try {
+    browser = await chromium.launch(useInstalled ? { ...options, channel: 'chrome' } : options);
+  } catch (chromeError) {
+    if (!useInstalled) throw chromeError;
+    try { browser = await chromium.launch({ ...options, channel: 'msedge' }); } catch { throw chromeError; } // report Chrome's error, the first choice
+  }
   const page = await browser.newPage({ viewport: { width: 1500, height: 1250 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));

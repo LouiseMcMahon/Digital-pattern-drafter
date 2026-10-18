@@ -7,6 +7,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 const MODULES = {
   slice: { mutate: 'src/core/slice.ts', tests: ['src/core/slice.test.ts'] },
@@ -95,15 +96,16 @@ function runModule(name, concurrency, quiet) {
   config.concurrency = concurrency;
   config.mutate = ranges.has(name) ? ranges.get(name).map(([a, b]) => `${mutate}:${a}-${b}`) : [mutate];
   writeFileSync(`${dir}/stryker.config.json`, JSON.stringify(config, null, 2));
-  const args = ['stryker', 'run', `${dir}/stryker.config.json`];
+  // Run Stryker's own script with this node: spawning `npx` fails on Windows (it is a .cmd file).
+  const args = [fileURLToPath(new URL('../node_modules/@stryker-mutator/core/bin/stryker.js', import.meta.url)), 'run', `${dir}/stryker.config.json`];
   const env = { ...process.env, MUTATION_TESTS: tests.join(',') };
   if (!quiet) {
     console.log(`\n=== mutation testing: ${mutate} (tests: ${tests.join(', ')}) ===`);
-    return Promise.resolve(spawnSync('npx', args, { stdio: 'inherit', env }).status);
+    return Promise.resolve(spawnSync(process.execPath, args, { stdio: 'inherit', env }).status);
   }
   const log = createWriteStream(`${dir}/stryker.log`);
   return new Promise((resolve) => {
-    const child = spawn('npx', args, { env });
+    const child = spawn(process.execPath, args, { env });
     child.stdout.pipe(log, { end: false });
     child.stderr.pipe(log, { end: false });
     child.on('close', (code) => { log.end(); resolve(code); });

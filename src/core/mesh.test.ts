@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Mesh, boundaryLoops, cross, dot, extractSubmesh, getVertex, len, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
+import { type Mesh, boundaryLoops, cross, dot, extractSubmesh, getVertex, len, meshEdges, normalize, sub, triangleCount, vertexCount, vertexNeighbours, vertexNormals } from './mesh';
 
 // Unit square in z = 0 split into two triangles, counter-clockwise seen from +z.
 //  3---2
@@ -121,5 +121,26 @@ describe('boundaryLoops', () => {
       triangles: Uint32Array.from([0, 1, 2, 3, 4, 5]),
     };
     expect(boundaryLoops(m).map((l) => l.length)).toEqual([3, 3]);
+  });
+});
+
+describe('meshEdges and vertexNeighbours', () => {
+  it('lists each edge once, with the vertex opposite it in every triangle that has it', () => {
+    const e = meshEdges(square()); // two triangles sharing the 0-2 diagonal
+    expect(e.a).toHaveLength(5);
+    const diagonal = e.a.findIndex((a, i) => [a, e.b[i]].sort().join() === '0,2');
+    expect([...e.opposite[diagonal]].sort()).toEqual([1, 3]);
+    const border = e.a.findIndex((a, i) => [a, e.b[i]].sort().join() === '0,1');
+    expect(e.opposite[border]).toEqual([2]);
+    expect(e.opposite.filter((o) => o.length === 2)).toHaveLength(1);
+  });
+  it('lists the neighbours of each vertex without repeats', () => {
+    const nb = vertexNeighbours(square()).map((l) => [...l].sort());
+    expect(nb).toEqual([[1, 2, 3], [0, 2], [0, 1, 3], [0, 2]]);
+  });
+  it('is empty for an empty mesh', () => {
+    const e = meshEdges({ positions: new Float64Array(0), triangles: new Uint32Array(0) });
+    expect(e.a).toEqual([]);
+    expect(vertexNeighbours({ positions: new Float64Array(0), triangles: new Uint32Array(0) })).toEqual([]);
   });
 });

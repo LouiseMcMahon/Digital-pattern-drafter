@@ -97,3 +97,40 @@ export function boundaryLoops(m: Mesh): number[][] {
   }
   return loops;
 }
+
+export interface MeshEdges {
+  a: number[];
+  b: number[];
+  /** For each edge, the vertex opposite it in each triangle that has the edge (one on a border, two inside). */
+  opposite: number[][];
+}
+
+/** The unique edges of a mesh, in order of first appearance, with the vertices opposite each. */
+export function meshEdges(m: Mesh): MeshEdges {
+  const n = vertexCount(m);
+  const index = new Map<number, number>();
+  const edges: MeshEdges = { a: [], b: [], opposite: [] };
+  for (let t = 0; t < triangleCount(m); t++) {
+    for (let k = 0; k < 3; k++) {
+      const a = m.triangles[3 * t + k];
+      const b = m.triangles[3 * t + ((k + 1) % 3)];
+      const c = m.triangles[3 * t + ((k + 2) % 3)];
+      const key = Math.min(a, b) * n + Math.max(a, b);
+      const found = index.get(key);
+      if (found === undefined) {
+        index.set(key, edges.a.length);
+        edges.a.push(a);
+        edges.b.push(b);
+        edges.opposite.push([c]);
+      } else edges.opposite[found].push(c);
+    }
+  }
+  return edges;
+}
+
+/** For each vertex, the vertices it shares an edge with. */
+export function vertexNeighbours(m: Mesh, edges: MeshEdges = meshEdges(m)): number[][] {
+  const out: number[][] = Array.from({ length: vertexCount(m) }, () => []);
+  edges.a.forEach((a, i) => { out[a].push(edges.b[i]); out[edges.b[i]].push(a); });
+  return out;
+}
