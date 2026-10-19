@@ -67,7 +67,7 @@ controls.innerHTML = `
     </div>
     <label class="row">Colour panels by <select id="panel-colour" class="grow"><option value="lift">lift off the body</option><option value="strain">strain (red/blue) or panel colour</option></select></label>
     <div id="lift-key" class="hint"></div>
-    <div class="row" title="A panel that hangs free from a seam instead of lying on the body, such as a skirt from a waist seam. Draw the seam first (a closed seam is cut open at its first point; for half a skirt draw from centre front to centre back).">Hang a panel from seam <input type="number" id="hang-seam" min="1" step="1" value="1" style="width:48px"> length <input type="number" id="hang-length" min="1" step="1" value="60" style="width:52px">cm flare <input type="number" id="hang-flare" step="5" value="30" style="width:48px">% <button id="hang-make">Add</button></div>
+    <div class="row" title="A panel that hangs free from a seam instead of lying on the body, such as a skirt from a waist seam. Draw the seam first (a closed seam is cut open at its first point, or wherever you choose with Choose side seam; for half a skirt draw from centre front to centre back).">Hang a panel from seam <input type="number" id="hang-seam" min="1" step="1" value="1" style="width:48px"> length <input type="number" id="hang-length" min="1" step="1" value="60" style="width:52px">cm flare <input type="number" id="hang-flare" step="5" value="30" style="width:48px">% <button id="hang-make">Add</button></div>
     <div id="hang-note" class="hint"></div>
     <div id="panels"></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
@@ -358,6 +358,7 @@ function restoreLocal() {
 type Panel = PanelSeed;
 let panels: Panel[] = [];
 let pickingPanel = false;
+let pickingSide = -1; // the hanging panel whose side seam is being chosen
 let outlines: [number, number][][] = []; // the flat outline of each panel, for tests
 const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
 
@@ -446,7 +447,7 @@ function renderPanels(result: PanelsResult) {
     const hex = '#' + color.toString(16).padStart(6, '0');
     const hang = panels[i]?.hang;
     const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${hang.length}" data-hang="${i}" data-field="length">cm</label><label title="How much wider the hem is than the seam, %">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
-    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">âœ•</button></div>`;
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">âœ•</button></div>`;
     if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
@@ -494,7 +495,13 @@ function renderPanels(result: PanelsResult) {
     const drapedLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(...[0, 1, 2].map((c) => shape.positions[3 * a + c] - shape.positions[3 * b + c]) as [number, number, number]); }, 0);
     const sides: string[] = [];
     for (const e of d.edges) {
-      if (e.seam === undefined) continue;
+      if (e.seam === undefined && e.name === undefined) continue;
+      if (e.seam === undefined) { // a side of a hanging panel that is not on a seam: its side seam or its hem
+        sides.push(`${e.name}: ${e.length.toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})`);
+        const [hx, hy] = place(subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!);
+        labels.push(`<text x="${hx.toFixed(2)}" y="${hy.toFixed(2)}" font-size="2.2" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.6" paint-order="stroke">${e.name}: ${flatLength(e.vertices).toFixed(1)}</text>`);
+        continue;
+      }
       const others = (panelsOfSeam.get(e.seam) ?? []).filter((j) => j !== i).map((j) => j + 1);
       sides.push(`Seam ${e.seam + 1}: ${drapedLength(e.vertices).toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
       const [lx, ly] = place(subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!);
@@ -530,6 +537,14 @@ function renderPanels(result: PanelsResult) {
       checkpoint();
       h[el.dataset.field as 'length' | 'flare'] = Number.isFinite(value) ? value : 0;
       void changePanels();
+    };
+  });
+  $('panels').querySelectorAll<HTMLButtonElement>('button[data-side-panel]').forEach((el) => {
+    el.onclick = () => {
+      const i = Number(el.dataset.sidePanel);
+      pickingSide = pickingSide === i ? -1 : i;
+      el.textContent = pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam';
+      renderer.domElement.style.cursor = pickingSide >= 0 ? 'crosshair' : '';
     };
   });
   $('panels').querySelectorAll<HTMLButtonElement>('button[data-delete-panel]').forEach((el) => {
@@ -785,10 +800,18 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   }
   const start = down;
   down = undefined;
-  if (!start || !body || !($<HTMLInputElement>('draw').checked || pickingPanel)) return;
+  if (!start || !body || !($<HTMLInputElement>('draw').checked || pickingPanel || pickingSide >= 0)) return;
   if (Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4) return;
   const hit = pick(e);
   if (!hit) return;
+  if (pickingSide >= 0) { // the side seam of a hanging panel goes where the click is (the panel cuts open at the nearest point of its seam)
+    checkpoint();
+    panels[pickingSide].seed = hit.surface;
+    pickingSide = -1;
+    renderer.domElement.style.cursor = '';
+    void changePanels();
+    return;
+  }
   if (pickingPanel) {
     checkpoint();
     panels.push({ seed: hit.surface, horizontal: 0, vertical: 0 });

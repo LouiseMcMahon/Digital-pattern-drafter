@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildHanging, polylineLengthOf, resample } from './hanging';
 import type { Mesh } from './mesh';
 import { type Seam, SurfaceGraph, raycast } from './seam';
-import { computePanels, type PanelFlat } from './panelPipeline';
+import { computePanels, cutAt, type PanelFlat } from './panelPipeline';
 
 /** An open tube of radius r around the y axis, from y = 0 to 100, standing for a torso. */
 function tube(r: number, sides = 48, rows = 40): Mesh {
@@ -95,5 +95,20 @@ describe('a hanging panel in computePanels', () => {
   it('reports a panel whose seam is gone instead of throwing', () => {
     const { panels } = computePanels(body, graph, [], [{ seed, horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare: 0 } }]);
     expect(panels[0].error).toMatch(/seam this panel hangs from/);
+  });
+});
+
+describe('the side seam of a closed hanging panel', () => {
+  it('cutAt turns a closed path to start and end at the nearest point', () => {
+    const square = [0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0];
+    expect(cutAt(square, [1, 0, 0.9])).toEqual([1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 1]);
+  });
+  it('goes where the panel seed is, and the sides are named', () => {
+    const seed = onTube(Math.PI / 2, 60); // the side of the body, a quarter of the way round from the first seam point
+    const { panels } = computePanels(body, graph, [waist], [{ seed, horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare: 0 } }]);
+    const p = flatOf(panels[0]);
+    expect(p.edges.map((e) => e.name)).toEqual([undefined, 'Side seam', 'Hem', 'Side seam']);
+    const first = p.sub.mesh.positions; // the top row starts at the chosen side (x ~ 0, z ~ 10)
+    expect(Math.hypot(first[0], first[2] - 10.3)).toBeLessThan(1.5);
   });
 });

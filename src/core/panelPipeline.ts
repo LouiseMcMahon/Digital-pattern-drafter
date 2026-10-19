@@ -5,13 +5,15 @@ import { drape, drapeSeams } from './drape';
 import { uniformEase } from './ease';
 import { flatten } from './flatten';
 import { type Mesh, boundaryLoops, extractSubmesh, getVertex, len, sub } from './mesh';
-import { type Seam, SurfaceGraph } from './seam';
+import { type Seam, SurfaceGraph, pointOnSurface } from './seam';
 
 /** A region bigger than this share of the body is not enclosed by the seams. */
 export const MAX_PANEL_SHARE = 0.6;
 
 /** A side of a panel with its flat length next to its length on the body. */
 export interface FlatEdge extends PanelEdge {
+  /** For the sides of a hanging panel that are not on a seam: what they are ("Hem", "Side seam"). */
+  name?: string;
   /** Length of the same run in the flat piece (cm). */
   flatLength: number;
 }
@@ -90,7 +92,9 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
     const seam = seams[hang.seam];
     if (!seam || seam.points.length < 2) return { error: 'The seam this panel hangs from is gone or has fewer than 2 points.', size: 0, triangles: [] };
     try {
-      const path = graph.seamPath(original.positions, seam);
+      let path = Array.from(graph.seamPath(original.positions, seam));
+      const closed = seam.closed && seam.points.length > 2;
+      if (closed) path = cutAt(path, pointOnSurface(original, panel.seed)); // the seed is where the side seam goes
       const built = buildHanging(original, path, { length: hang.length, flare: hang.flare });
       const loops = boundaryLoops(built.mesh);
       if (loops.length !== 1) return { error: 'This hanging panel is not a single piece.', size: 0, triangles: [] };
@@ -100,11 +104,12 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       const row = (j: number) => Array.from({ length: columns }, (_, i) => i * rows + j);
       const length = (vs: number[]) => vs.slice(1).reduce((s, v, k) => s + len(sub(getVertex(built.mesh, v), getVertex(built.mesh, vs[k]))), 0);
       // Sides in order round the outline: the seam, the far side, the hem (drawn back to the start), the near side.
-      const sides: { seam: number | undefined; vertices: number[] }[] = [
+      const sideName = closed ? 'Side seam' : 'Side edge';
+      const sides: { seam: number | undefined; name?: string; vertices: number[] }[] = [
         { seam: hang.seam, vertices: row(0) },
-        { seam: undefined, vertices: column(columns - 1, 0, rows - 1) },
-        { seam: undefined, vertices: row(rows - 1).reverse() },
-        { seam: undefined, vertices: column(0, rows - 1, 0) },
+        { seam: undefined, name: sideName, vertices: column(columns - 1, 0, rows - 1) },
+        { seam: undefined, name: 'Hem', vertices: row(rows - 1).reverse() },
+        { seam: undefined, name: sideName, vertices: column(0, rows - 1, 0) },
       ];
       const triangles = Array.from({ length: built.mesh.triangles.length / 3 }, (_, i) => i);
       return {
@@ -118,6 +123,20 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       return { error: `This hanging panel could not be made (${err instanceof Error ? err.message : 'unknown error'}).`, size: 0, triangles: [] };
     }
   }
+}
+
+/** A closed path (xyz triples, last point = first) turned so it starts and ends at the path point nearest `at`. */
+export function cutAt(path: number[], at: [number, number, number]): number[] {
+  const n = path.length / 3 - 1; // distinct points
+  let best = 0;
+  let bd = Infinity;
+  for (let i = 0; i < n; i++) {
+    const d = Math.hypot(path[3 * i] - at[0], path[3 * i + 1] - at[1], path[3 * i + 2] - at[2]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  const out: number[] = [];
+  for (let k = 0; k <= n; k++) out.push(...path.slice(3 * ((best + k) % n), 3 * ((best + k) % n) + 3));
+  return out;
 }
 
 const flatLengthOf = (uv: Float64Array, vs: number[]) => vs.slice(1).reduce((s, v, k) => s + Math.hypot(uv[2 * v] - uv[2 * vs[k]], uv[2 * v + 1] - uv[2 * vs[k] + 1]), 0);
