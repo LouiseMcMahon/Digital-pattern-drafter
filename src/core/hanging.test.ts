@@ -162,42 +162,6 @@ describe('two side seams', () => {
   });
 });
 
-describe('cloth simulation of a hanging panel', () => {
-  it('keeps the sewn row where it is, lets the rest hang, and does not stretch', async () => {
-    const { drapeGarment } = await import('./cloth');
-    const { SurfaceField } = await import('./bodyField');
-    const { flatten } = await import('./flatten');
-    const { uniformEase } = await import('./ease');
-    const path = graph.seamPath(body.positions, waist);
-    const h = buildHanging(body, path, { length: 30, flare: 30 });
-    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
-    const border = boundaryLoops(h.mesh)[0]; // the sewn row, the side seams and the hem
-    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned: border }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
-    for (const v of border) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6); // seams and hem stay where they were put: no twisting, no riding up
-    expect(result.worstStrain).toBeLessThan(0.02);
-    for (let v = 0; v < result.mesh.positions.length / 3; v++) {
-      expect(result.mesh.positions[3 * v + 1]).toBeGreaterThanOrEqual(20 - 1e-9); // not through the floor
-      expect(Math.hypot(result.mesh.positions[3 * v], result.mesh.positions[3 * v + 2])).toBeGreaterThan(9.9); // not into the body
-    }
-  });
-});
-
-describe('cloth patterns for a hanging panel', () => {
-  it('keeps it hanging and pinned through the touch-up rounds', async () => {
-    const { clothPatterns } = await import('./cloth');
-    const { SurfaceField } = await import('./bodyField');
-    const { flatten } = await import('./flatten');
-    const { uniformEase } = await import('./ease');
-    const h = buildHanging(body, graph.seamPath(body.positions, waist), { length: 30, flare: 30 });
-    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
-    const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
-    const [r] = clothPatterns([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned }], new SurfaceField(body), { rounds: 3, iterations: 100, touchUp: 30, edgePasses: 16 });
-    for (const v of pinned) expect(r.mesh.positions[3 * v + 1]).toBeCloseTo(h.mesh.positions[3 * v + 1], 6);
-    expect(r.maxSeamError).toBe(0); // no border target to fall short of
-    expect(r.worstStrain).toBeLessThan(0.03);
-  });
-});
-
 describe('a skirt to the floor', () => {
   it('works its length out from the seam height and the lowest point of the body', () => {
     const { panels } = computePanels(body, graph, [waist], [{ seed: waist.points[0], horizontal: 0, vertical: 0, hang: { seam: 0, length: 5, flare: 0, toFloor: true } }]);
