@@ -32,7 +32,7 @@ export interface HangingPanel {
   rows: number;
   /** Per vertex: height off the body (cm). */
   gap: Float64Array;
-  /** The flare actually used: the one asked for, or more where the panel would otherwise have to pass through the body (a skirt over wide hips). */
+  /** The flare actually used: the one asked for plus, where the panel would otherwise have to pass through the body (a skirt over wide hips), the flare it takes to clear it. */
   flare: number;
 }
 
@@ -110,8 +110,8 @@ export function firstHit(m: Mesh, minY: Float64Array, maxY: Float64Array, from: 
  *
  * Every point of the seam drops straight down by `length` and moves out from the vertical line through the middle of the
  * body by `flare` percent of its distance from it, and the rows between are straight lines, so the panel is a cone (or
- * a cylinder with no flare) and lies flat. A skirt cannot go through the hips: if the cone would, its flare is widened
- * until it clears the trunk (see `flare` in the result). Only the trunk counts, not the arms beside it.
+ * a cylinder with no flare) and lies flat. A skirt cannot go through the hips: if the cone would, the flare it takes to clear
+ * the trunk is added to the flare asked for (see `flare` in the result). Only the trunk counts, not the arms beside it.
  */
 export function buildHanging(body: Mesh, path: ArrayLike<number>, options: HangingOptions): HangingPanel {
   const { length, flare } = options;
@@ -153,7 +153,7 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
     maxY[t] = Math.max(...ys);
   }
   const reach = new Float64Array(columns * rows).fill(-Infinity); // the trunk's distance from the middle line, where there is one
-  let used = flare;
+  let needed = 0; // the flare the cone needs, with none asked for, to clear the body
   for (let i = 0; i < columns; i++) for (let j = 1; j < rows; j++) {
     const t = j / (rows - 1);
     const y = seam[i][1] - t * length;
@@ -161,9 +161,10 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
     const hit = firstHit(body, minY, maxY, [middle[0], y, middle[2]], direction[i][0], direction[i][1]);
     if (hit === undefined) continue;
     reach[index(i, j)] = hit;
-    if (!options.fitted && radius[i] > 1e-9) used = Math.max(used, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
+    if (!options.fitted && radius[i] > 1e-9) needed = Math.max(needed, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
   }
 
+  const used = flare + needed; // what is asked for comes on top of what it takes to clear the body
   const pos = new Float64Array(3 * columns * rows);
   const gap = new Float64Array(columns * rows);
   const out = new Float64Array(columns * rows); // distance of each vertex from the middle line

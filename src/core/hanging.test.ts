@@ -203,3 +203,16 @@ describe('a skirt to the floor', () => {
     expect(p.edges[1].length).toBeCloseTo(59.7, 0);
   });
 });
+
+describe('flare on top of what it takes to clear the body', () => {
+  it('a bigger flare makes a bigger hem even where the body forces a wide one', () => {
+    const wide = tube(10);
+    for (let v = 0; v < wide.positions.length / 3; v++) if (wide.positions[3 * v + 1] < 55) { wide.positions[3 * v] *= 1.5; wide.positions[3 * v + 2] *= 1.5; }
+    const path = Array.from({ length: 49 }, (_, k) => [10 * Math.cos((2 * Math.PI * k) / 48), 60, 10 * Math.sin((2 * Math.PI * k) / 48)]).flat();
+    const [a, b] = [0, 40].map((flare) => buildHanging(wide, path, { length: 30, flare }));
+    expect(a.flare).toBeGreaterThan(30); // forced by the wide part
+    expect(b.flare).toBeCloseTo(a.flare + 40, 6);
+    const hem = (h: ReturnType<typeof buildHanging>) => Math.hypot(h.mesh.positions[3 * (h.rows - 1)], h.mesh.positions[3 * (h.rows - 1) + 2]);
+    expect(hem(b)).toBeGreaterThan(hem(a) * 1.1);
+  });
+});

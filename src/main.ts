@@ -462,7 +462,7 @@ function renderPanels(result: PanelsResult) {
     const hex = '#' + color.toString(16).padStart(6, '0');
     const hang = panels[i]?.hang;
     const shownLength = hang?.toFloor && d.error === undefined && d.hangLength !== undefined ? d.hangLength.toFixed(0) : String(hang?.length);
-    const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${shownLength}" ${hang.toFloor ? 'disabled ' : ''}data-hang="${i}" data-field="length">cm</label><label title="Hem at the floor"><input type="checkbox" data-hang-floor="${i}"${hang.toFloor ? ' checked' : ''}>floor</label><label title="How much wider the hem is than the seam, %">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
+    const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${shownLength}" ${hang.toFloor ? 'disabled ' : ''}data-hang="${i}" data-field="length">cm</label><label title="Hem at the floor"><input type="checkbox" data-hang-floor="${i}"${hang.toFloor ? ' checked' : ''}>floor</label><label title="Flare, %: added to whatever flare it takes to clear the hips (a skirt from the waist needs a lot). Fitted: the hem width against the hips.">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
     const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (${hang.fitted ? 'fitted, ' : ''}${hang.half === undefined ? '' : hang.half === 0 ? 'half 1, ' : 'half 2, '}hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body� (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
     if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
@@ -547,7 +547,7 @@ function renderPanels(result: PanelsResult) {
         }
       }
     }
-    const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">Flare widened to ${d.flareUsed.toFixed(0)}% so the panel clears the body.</span>` : '';
+    const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">${(d.flareUsed - (hang?.flare ?? 0)).toFixed(0)}% of flare is needed just to clear the body, so the hem is ${d.flareUsed.toFixed(0)}% out in all (your flare is added on top).</span>` : '';
     const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
     rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}${widened}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
@@ -567,7 +567,8 @@ function renderPanels(result: PanelsResult) {
       const value = Number(el.value);
       if (el.dataset.field === 'length' && !(value > 0)) { el.value = String(h.length); return; }
       checkpoint();
-      h[el.dataset.field as 'length' | 'flare'] = Number.isFinite(value) ? value : 0;
+      // Both halves of a skirt change together.
+      for (const q of panels) if (q.hang && q.hang.seam === h.seam) q.hang[el.dataset.field as 'length' | 'flare'] = Number.isFinite(value) ? value : 0;
       void changePanels();
     };
   });
@@ -575,7 +576,7 @@ function renderPanels(result: PanelsResult) {
     el.onchange = () => {
       const h = panels[Number(el.dataset.hangFloor)].hang!;
       checkpoint();
-      if (el.checked) h.toFloor = true; else delete h.toFloor;
+      for (const q of panels) if (q.hang && q.hang.seam === h.seam) { if (el.checked) q.hang.toFloor = true; else delete q.hang.toFloor; }
       void changePanels();
     };
   });
