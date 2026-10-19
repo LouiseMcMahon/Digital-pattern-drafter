@@ -1,0 +1,167 @@
+import { type Mesh, type Vec3, len, sub } from './mesh';
+
+/**
+ * A hanging panel: cloth fastened to the body along a seam and falling free below it, like a skirt from a waist seam.
+ * It is not cut from the skin, so it has an edge (the hem) that is nowhere near the body.
+ *
+ * The seam is the top edge and the hem is `length` below it, flared out by `flare` percent: see `buildHanging`.
+ */
+export interface HangingOptions {
+  /** Length from the seam to the hem, straight down (cm). */
+  length: number;
+  /** How much further out the hem is than the seam, in percent of the seam's distance from the middle line of the body (0 hangs straight, 50 makes the hem half as wide again). */
+  flare: number;
+  /** Distance kept between the cloth and the body at the hem (cm); it grows from nothing at the seam. Default 0.3. */
+  standoff?: number;
+  /** Target spacing of the mesh (cm). Default 1.5. */
+  spacing?: number;
+}
+
+export interface HangingPanel {
+  mesh: Mesh;
+  /** Vertex columns across the panel, and rows down it (row 0 is the seam). */
+  columns: number;
+  rows: number;
+  /** Per vertex: height off the body (cm). */
+  gap: Float64Array;
+  /** The flare actually used: the one asked for, or more where the panel would otherwise have to pass through the body (a skirt over wide hips). */
+  flare: number;
+}
+
+/** `count` points spaced evenly along a polyline (xyz triples), including both ends. */
+export function resample(poly: ArrayLike<number>, count: number): Vec3[] {
+  const n = poly.length / 3;
+  const at = (i: number): Vec3 => [poly[3 * i], poly[3 * i + 1], poly[3 * i + 2]];
+  const cumulative = [0];
+  for (let i = 1; i < n; i++) cumulative.push(cumulative[i - 1] + len(sub(at(i), at(i - 1))));
+  const total = cumulative[n - 1];
+  const out: Vec3[] = [];
+  let seg = 1;
+  for (let k = 0; k < count; k++) {
+    const d = (total * k) / (count - 1);
+    while (seg < n - 1 && cumulative[seg] < d) seg++;
+    const span = cumulative[seg] - cumulative[seg - 1];
+    const t = span > 0 ? Math.min(1, Math.max(0, (d - cumulative[seg - 1]) / span)) : 0;
+    const [a, b] = [at(seg - 1), at(seg)];
+    out.push([0, 1, 2].map((c) => a[c] + t * (b[c] - a[c])) as Vec3);
+  }
+  return out;
+}
+
+export function polylineLengthOf(poly: ArrayLike<number>): number {
+  let total = 0;
+  for (let i = 3; i < poly.length; i += 3) total += Math.hypot(poly[i] - poly[i - 3], poly[i + 1] - poly[i - 2], poly[i + 2] - poly[i - 1]);
+  return total;
+}
+
+/**
+ * Where, along the horizontal ray from `from` in direction (dx, dz) (unit) at height `from[1]`, the mesh is first
+ * crossed: the distance, or undefined if it is not. From a point inside the trunk this is the skin of the trunk, not
+ * an arm that hangs beside it.
+ */
+export function firstHit(m: Mesh, minY: Float64Array, maxY: Float64Array, from: Vec3, dx: number, dz: number): number | undefined {
+  const y = from[1];
+  const { positions: P, triangles: T } = m;
+  let best: number | undefined;
+  for (let t = 0; t < T.length / 3; t++) {
+    if (y < minY[t] || y > maxY[t]) continue;
+    // The triangle cut by the plane at height y is a segment; intersect it with the ray in the plane (2D, x and z).
+    const pts: [number, number][] = [];
+    for (let k = 0; k < 3; k++) {
+      const a = T[3 * t + k];
+      const b = T[3 * t + ((k + 1) % 3)];
+      const [ya, yb] = [P[3 * a + 1], P[3 * b + 1]];
+      if ((ya - y) * (yb - y) > 0 || ya === yb) continue;
+      const u = (y - ya) / (yb - ya);
+      pts.push([P[3 * a] + u * (P[3 * b] - P[3 * a]), P[3 * a + 2] + u * (P[3 * b + 2] - P[3 * a + 2])]);
+    }
+    if (pts.length < 2) continue;
+    const [p, q] = pts;
+    const ex = q[0] - p[0];
+    const ez = q[1] - p[1];
+    const denom = dx * ez - dz * ex;
+    if (Math.abs(denom) < 1e-12) continue;
+    const wx = p[0] - from[0];
+    const wz = p[1] - from[2];
+    const along = (wx * ez - wz * ex) / denom; // distance along the ray
+    const across = (wx * dz - wz * dx) / denom; // 0 to 1 along the segment
+    if (along > 1e-9 && across >= -1e-9 && across <= 1 + 1e-9 && (best === undefined || along < best)) best = along;
+  }
+  return best;
+}
+
+/**
+ * Builds the hanging panel under a seam path (xyz triples, from the first point to the last). For a closed seam give
+ * the path including its return to the start: the panel is cut open there, with the two sides meeting at the first point.
+ *
+ * Every point of the seam drops straight down by `length` and moves out from the vertical line through the middle of the
+ * body by `flare` percent of its distance from it, and the rows between are straight lines, so the panel is a cone (or
+ * a cylinder with no flare) and lies flat. A skirt cannot go through the hips: if the cone would, its flare is widened
+ * until it clears the trunk (see `flare` in the result). Only the trunk counts, not the arms beside it.
+ */
+export function buildHanging(body: Mesh, path: ArrayLike<number>, options: HangingOptions): HangingPanel {
+  const { length, flare } = options;
+  const standoff = options.standoff ?? 0.3;
+  const spacing = options.spacing ?? 1.5;
+  if (!(length > 0)) throw new Error('A hanging panel needs a length above 0');
+  if (path.length < 6) throw new Error('A hanging panel needs a seam with at least two points');
+
+  const top = Math.max(1, Math.round(polylineLengthOf(path) / spacing));
+  const columns = top + 1;
+  const rows = Math.max(2, Math.round(length / spacing) + 1);
+  const seam = resample(path, columns);
+
+  // The vertical line the panel flares out from. A closed seam goes right round the body, so its middle is the middle of the
+  // body. An open seam is part of the way round (half a skirt, drawn from centre front to centre back): the body is symmetric
+  // about x = 0 and the seam's furthest-forward and furthest-back points are the front and back of the body, so the middle is
+  // halfway between those.
+  const middle: Vec3 = [0, 0, 0];
+  const closed = Math.hypot(path[0] - path[path.length - 3], path[1] - path[path.length - 2], path[2] - path[path.length - 1]) < 1e-6;
+  if (closed) for (const p of seam) for (const c of [0, 2]) middle[c] += p[c] / columns;
+  else middle[2] = (Math.min(...seam.map((p) => p[2])) + Math.max(...seam.map((p) => p[2]))) / 2;
+
+  const index = (i: number, j: number) => i * rows + j;
+  const radius = new Float64Array(columns); // distance of each seam point from the middle line
+  const direction: [number, number][] = seam.map((p, i) => {
+    const [dx, dz] = [p[0] - middle[0], p[2] - middle[2]];
+    radius[i] = Math.hypot(dx, dz);
+    return radius[i] > 1e-9 ? [dx / radius[i], dz / radius[i]] : [1, 0];
+  });
+  const clearance = (j: number) => (standoff * j) / (rows - 1); // grows from nothing at the seam, so a skirt over a straight body is a cone
+
+  // How far out the trunk reaches at each row, and so the flare each row needs.
+  const triangleCount = body.triangles.length / 3;
+  const minY = new Float64Array(triangleCount);
+  const maxY = new Float64Array(triangleCount);
+  for (let t = 0; t < triangleCount; t++) {
+    const ys = [0, 1, 2].map((k) => body.positions[3 * body.triangles[3 * t + k] + 1]);
+    minY[t] = Math.min(...ys);
+    maxY[t] = Math.max(...ys);
+  }
+  const reach = new Float64Array(columns * rows).fill(-Infinity); // the trunk's distance from the middle line, where there is one
+  let used = flare;
+  for (let i = 0; i < columns; i++) for (let j = 1; j < rows; j++) {
+    const t = j / (rows - 1);
+    const y = seam[i][1] - t * length;
+    const hit = firstHit(body, minY, maxY, [middle[0], y, middle[2]], direction[i][0], direction[i][1]);
+    if (hit === undefined) continue;
+    reach[index(i, j)] = hit;
+    if (radius[i] > 1e-9) used = Math.max(used, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
+  }
+
+  const pos = new Float64Array(3 * columns * rows);
+  const gap = new Float64Array(columns * rows);
+  for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
+    const t = j / (rows - 1);
+    const grow = 1 + (t * used) / 100;
+    pos.set([middle[0] + (seam[i][0] - middle[0]) * grow, seam[i][1] - t * length, middle[2] + (seam[i][2] - middle[2]) * grow], 3 * index(i, j));
+    gap[index(i, j)] = Number.isFinite(reach[index(i, j)]) ? Math.max(0, radius[i] * grow - reach[index(i, j)]) : 0;
+  }
+
+  const triangles: number[] = [];
+  for (let i = 0; i + 1 < columns; i++) for (let j = 0; j + 1 < rows; j++) {
+    const [a, b, c, d] = [index(i, j), index(i + 1, j), index(i + 1, j + 1), index(i, j + 1)];
+    triangles.push(a, b, c, a, c, d);
+  }
+  return { mesh: { positions: pos, triangles: Uint32Array.from(triangles) }, columns, rows, gap, flare: used };
+}

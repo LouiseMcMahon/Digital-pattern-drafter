@@ -100,3 +100,24 @@ describe('serializeDesign and parseDesign', () => {
     expect(() => parseDesign(text().replace('"horizontal":-5', '"horizontal":1e999'), N)).toThrow(/no valid ease/);
   });
 });
+
+describe('hanging panels', () => {
+  const withHang = (): Design => ({ ...design(), panels: [{ ...design().panels[0], hang: { seam: 1, length: 60, flare: 30 } }] });
+  it('are copied, saved and read back', () => {
+    const d = withHang();
+    const c = cloneDesign(d);
+    expect(c).toEqual(d);
+    c.panels[0].hang!.length = 5;
+    expect(d.panels[0].hang!.length).toBe(60);
+    expect(parseDesign(serializeDesign(d, N), N)).toEqual(d);
+  });
+  it('are refused when the seam, length or flare is unusable', () => {
+    const bad = (hang: unknown) => text((x) => { x.panels[0].hang = hang; });
+    expect(() => parseDesign(bad({ seam: 2, length: 60, flare: 0 }), N)).toThrow(/seam that does not exist/);
+    expect(() => parseDesign(bad({ seam: -1, length: 60, flare: 0 }), N)).toThrow(/seam that does not exist/);
+    expect(() => parseDesign(bad(null), N)).toThrow(/seam that does not exist/);
+    expect(() => parseDesign(bad({ seam: 0, length: 0, flare: 0 }), N)).toThrow(/valid length or flare/);
+    expect(() => parseDesign(bad({ seam: 0, length: 5, flare: 'x' }), N)).toThrow(/valid length or flare/);
+    expect(() => parseDesign(bad({ seam: 0, length: 5, flare: 0 }), N)).not.toThrow();
+  });
+});

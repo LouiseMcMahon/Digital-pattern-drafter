@@ -67,6 +67,8 @@ controls.innerHTML = `
     </div>
     <label class="row">Colour panels by <select id="panel-colour" class="grow"><option value="lift">lift off the body</option><option value="strain">strain (red/blue) or panel colour</option></select></label>
     <div id="lift-key" class="hint"></div>
+    <div class="row" title="A panel that hangs free from a seam instead of lying on the body, such as a skirt from a waist seam. Draw the seam first (a closed seam is cut open at its first point; for half a skirt draw from centre front to centre back).">Hang a panel from seam <input type="number" id="hang-seam" min="1" step="1" value="1" style="width:48px"> length <input type="number" id="hang-length" min="1" step="1" value="60" style="width:52px">cm flare <input type="number" id="hang-flare" step="5" value="30" style="width:48px">% <button id="hang-make">Add</button></div>
+    <div id="hang-note" class="hint"></div>
     <div id="panels"></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
   </div></details>
@@ -434,7 +436,7 @@ function renderPanels(result: PanelsResult) {
   const panelsOfSeam = new Map<number, number[]>();
   result.panels.forEach((d, i) => { if (d.error === undefined) d.edges.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }); });
   // The cloth simulation works on all the flattened panels together, sewn at the seams they share.
-  const flattened = result.panels.map((_, i) => i).filter((i) => result.panels[i].error === undefined);
+  const flattened = result.panels.map((_, i) => i).filter((i) => result.panels[i].error === undefined && !(result.panels[i] as PanelFlat).hanging);
   const flatPanel = (i: number) => result.panels[i] as PanelFlat;
   const clothKey = flattened.map((i) => signature(flatPanel(i).draped.positions, flatPanel(i).flat.uv, flatPanel(i).sub.vertexMap)).join('|');
   lastGarment = flattened.length ? { key: clothKey, pieces: flattened.map((i) => ({ mesh: flatPanel(i).draped, flat: flatPanel(i).flat.uv, vertexMap: flatPanel(i).sub.vertexMap })), targets: result.taut } : undefined;
@@ -442,12 +444,14 @@ function renderPanels(result: PanelsResult) {
   result.panels.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
-    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
+    const hang = panels[i]?.hang;
+    const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${hang.length}" data-hang="${i}" data-field="length">cm</label><label title="How much wider the hem is than the seam, %">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
     if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
     // pattern length. What is left of stretch is real; where the patterns cannot reach the seam lines without stretching, the seam falls short instead.
-    const cloth = garment?.[flattened.indexOf(i)];
+    const cloth = garment?.[flattened.indexOf(i)]; // undefined for a hanging panel, which is not part of the cloth simulation
     const clothStale = clothOn() && !cloth;
     const shape = cloth ? cloth.mesh : d.draped;
     const gap = cloth ? cloth.gap : d.gap;
@@ -504,8 +508,9 @@ function renderPanels(result: PanelsResult) {
     const limbHint = strain.worstStrain > 0.3 || pat.flippedTriangles > 0.02 * (d.sub.mesh.triangles.length / 3)
       ? '<span class="bad"><b>This area probably runs on into an arm or leg.</b> If you meant a piece of the body, remove this panel and click on the torso away from the arm (or close the seams so the area is just the piece you want).</span>'
       : '';
+    const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">Flare widened to ${d.flareUsed.toFixed(0)}% so the panel clears the body.</span>` : '';
     const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
-    rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
+    rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}${widened}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
   $('panels').innerHTML = rows.join('');
   svg.style.display = shapes.length ? 'block' : 'none';
@@ -517,11 +522,33 @@ function renderPanels(result: PanelsResult) {
   $('panels').querySelectorAll<HTMLInputElement>('input[data-panel]').forEach((el) => {
     el.onchange = () => { checkpoint(); panels[Number(el.dataset.panel)][el.dataset.axis as 'horizontal' | 'vertical'] = Number(el.value) || 0; void changePanels(); };
   });
+  $('panels').querySelectorAll<HTMLInputElement>('input[data-hang]').forEach((el) => {
+    el.onchange = () => {
+      const h = panels[Number(el.dataset.hang)].hang!;
+      const value = Number(el.value);
+      if (el.dataset.field === 'length' && !(value > 0)) { el.value = String(h.length); return; }
+      checkpoint();
+      h[el.dataset.field as 'length' | 'flare'] = Number.isFinite(value) ? value : 0;
+      void changePanels();
+    };
+  });
   $('panels').querySelectorAll<HTMLButtonElement>('button[data-delete-panel]').forEach((el) => {
     el.onclick = () => { checkpoint(); panels.splice(Number(el.dataset.deletePanel), 1); void changePanels(); };
   });
   render();
 }
+$('hang-make').onclick = () => {
+  const index = Math.round(Number($<HTMLInputElement>('hang-seam').value)) - 1;
+  const length = Number($<HTMLInputElement>('hang-length').value);
+  const flare = Number($<HTMLInputElement>('hang-flare').value) || 0;
+  const note = $('hang-note');
+  if (!seams[index] || seams[index].points.length < 2) { note.textContent = `Seam ${index + 1} does not exist yet or has fewer than 2 points.`; return; }
+  if (!(length > 0)) { note.textContent = 'Give a length above 0.'; return; }
+  note.textContent = '';
+  checkpoint();
+  panels.push({ seed: seams[index].points[0], horizontal: 0, vertical: 0, hang: { seam: index, length, flare } });
+  void changePanels();
+};
 $('allowance').onchange = () => { if (panels.length) void refreshPanels(); };
 $('panel-pick').onclick = () => {
   pickingPanel = !pickingPanel;

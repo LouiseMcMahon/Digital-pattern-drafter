@@ -1,9 +1,10 @@
+import { buildHanging } from './hanging';
 import { type PanelEdge, area, cutMesh, locateInCut, panelEdges, regionFrom } from './cut';
 import type { PanelSeed } from './design';
 import { drape, drapeSeams } from './drape';
 import { uniformEase } from './ease';
 import { flatten } from './flatten';
-import { type Mesh, boundaryLoops, extractSubmesh } from './mesh';
+import { type Mesh, boundaryLoops, extractSubmesh, getVertex, len, sub } from './mesh';
 import { type Seam, SurfaceGraph } from './seam';
 
 /** A region bigger than this share of the body is not enclosed by the seams. */
@@ -18,6 +19,10 @@ export interface FlatEdge extends PanelEdge {
 export interface PanelFailure { error: string; size: number; triangles: number[] }
 export interface PanelFlat {
   error?: undefined;
+  /** Set for a panel that hangs free from a seam: it is not part of the body's cut mesh, so it is not sewn to other panels by shared vertices. */
+  hanging?: true;
+  /** For a hanging panel: the flare used, which is more than asked for where the panel would otherwise pass through the body. */
+  flareUsed?: number;
   size: number;
   /** Triangles of the cut mesh in this panel. */
   triangles: number[];
@@ -51,6 +56,7 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
   const taut = drapeOn ? drapeSeams(cut).positions : cut.mesh.positions;
   const everything = area(cut.mesh, Array.from({ length: cut.mesh.triangles.length / 3 }, (_, i) => i));
   const results = panels.map((panel): PanelResult => {
+    if (panel.hang) return hangingPanel(panel);
     const triangles = regionFrom(cut, locateInCut(cut, original, panel.seed));
     const size = area(cut.mesh, triangles);
     if (size > MAX_PANEL_SHARE * everything) return { error: 'The seams do not enclose this area (add seams until it is closed in).', size, triangles };
@@ -78,4 +84,40 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
     }
   });
   return { cut: cut.mesh, taut, panels: results };
+
+  function hangingPanel(panel: PanelSeed): PanelResult {
+    const hang = panel.hang!;
+    const seam = seams[hang.seam];
+    if (!seam || seam.points.length < 2) return { error: 'The seam this panel hangs from is gone or has fewer than 2 points.', size: 0, triangles: [] };
+    try {
+      const path = graph.seamPath(original.positions, seam);
+      const built = buildHanging(original, path, { length: hang.length, flare: hang.flare });
+      const loops = boundaryLoops(built.mesh);
+      if (loops.length !== 1) return { error: 'This hanging panel is not a single piece.', size: 0, triangles: [] };
+      const flat = flatten(built.mesh, { ease: uniformEase(panel.horizontal, panel.vertical) });
+      const { columns, rows } = built;
+      const column = (i: number, from: number, to: number) => Array.from({ length: Math.abs(to - from) + 1 }, (_, k) => i * rows + (from <= to ? from + k : from - k));
+      const row = (j: number) => Array.from({ length: columns }, (_, i) => i * rows + j);
+      const length = (vs: number[]) => vs.slice(1).reduce((s, v, k) => s + len(sub(getVertex(built.mesh, v), getVertex(built.mesh, vs[k]))), 0);
+      // Sides in order round the outline: the seam, the far side, the hem (drawn back to the start), the near side.
+      const sides: { seam: number | undefined; vertices: number[] }[] = [
+        { seam: hang.seam, vertices: row(0) },
+        { seam: undefined, vertices: column(columns - 1, 0, rows - 1) },
+        { seam: undefined, vertices: row(rows - 1).reverse() },
+        { seam: undefined, vertices: column(0, rows - 1, 0) },
+      ];
+      const triangles = Array.from({ length: built.mesh.triangles.length / 3 }, (_, i) => i);
+      return {
+        hanging: true, flareUsed: built.flare, size: area(built.mesh, triangles), triangles,
+        sub: { mesh: built.mesh, vertexMap: Array.from({ length: built.mesh.positions.length / 3 }, (_, i) => i) },
+        draped: built.mesh, gap: built.gap, loop: loops[0],
+        edges: sides.map((e) => ({ ...e, length: length(e.vertices), flatLength: flatLengthOf(flat.uv, e.vertices) })),
+        flat: { uv: flat.uv, worstStrain: flat.worstStrain, vertexStrain: flat.vertexStrain, flippedTriangles: flat.flippedTriangles, rmsEdgeError: flat.rmsEdgeError },
+      };
+    } catch (err) {
+      return { error: `This hanging panel could not be made (${err instanceof Error ? err.message : 'unknown error'}).`, size: 0, triangles: [] };
+    }
+  }
 }
+
+const flatLengthOf = (uv: Float64Array, vs: number[]) => vs.slice(1).reduce((s, v, k) => s + Math.hypot(uv[2 * v] - uv[2 * vs[k]], uv[2 * v + 1] - uv[2 * vs[k] + 1]), 0);
