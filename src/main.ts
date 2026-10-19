@@ -67,7 +67,7 @@ controls.innerHTML = `
     </div>
     <label class="row">Colour panels by <select id="panel-colour" class="grow"><option value="lift">lift off the body</option><option value="strain">strain (red/blue) or panel colour</option></select></label>
     <div id="lift-key" class="hint"></div>
-    <div class="row" title="A panel that hangs free from a seam instead of lying on the body, such as a skirt from a waist seam. Draw the seam first (a closed seam is cut open at its first point, or wherever you choose with Choose side seam; for half a skirt draw from centre front to centre back).">Hang a panel from seam <input type="number" id="hang-seam" min="1" step="1" value="1" style="width:48px"> length <input type="number" id="hang-length" min="1" step="1" value="60" style="width:52px">cm flare <input type="number" id="hang-flare" step="5" value="30" style="width:48px">% <label title="A fitted (pencil) skirt: follows the body down to the hips, then runs to the hem. Flare is then the hem width against the hips (negative: narrower). It needs shaping (darts) to lie flat; the strain shows how much."><input type="checkbox" id="hang-fitted">fitted</label> <button id="hang-make">Add</button></div>
+    <div class="row" title="A panel that hangs free from a seam instead of lying on the body, such as a skirt from a waist seam. Draw the seam first (a closed seam is cut open at its first point, or wherever you choose with Choose side seam; for half a skirt draw from centre front to centre back).">Hang a panel from seam <input type="number" id="hang-seam" min="1" step="1" value="1" style="width:48px"> length <input type="number" id="hang-length" min="1" step="1" value="60" style="width:52px">cm flare <input type="number" id="hang-flare" step="5" value="30" style="width:48px">% <label title="A fitted (pencil) skirt: follows the body down to the hips, then runs to the hem. Flare is then the hem width against the hips (negative: narrower). It needs shaping (darts) to lie flat; the strain shows how much."><input type="checkbox" id="hang-fitted">fitted</label> <label title="Cut a skirt from a closed seam at both side seams, giving a front and a back panel (the usual way). Off: one panel with a single side seam."><input type="checkbox" id="hang-two" checked>two side seams</label> <button id="hang-make">Add</button></div>
     <div id="hang-note" class="hint"></div>
     <div id="panels"></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
@@ -447,7 +447,7 @@ function renderPanels(result: PanelsResult) {
     const hex = '#' + color.toString(16).padStart(6, '0');
     const hang = panels[i]?.hang;
     const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${hang.length}" data-hang="${i}" data-field="length">cm</label><label title="How much wider the hem is than the seam, %">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
-    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (${hang.fitted ? 'fitted, ' : ''}hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">âœ•</button></div>`;
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (${hang.fitted ? 'fitted, ' : ''}${hang.half === undefined ? '' : hang.half === 0 ? 'half 1, ' : 'half 2, '}hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">âœ•</button></div>`;
     if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
@@ -515,6 +515,13 @@ function renderPanels(result: PanelsResult) {
     const limbHint = strain.worstStrain > 0.3 || pat.flippedTriangles > 0.02 * (d.sub.mesh.triangles.length / 3)
       ? '<span class="bad"><b>This area probably runs on into an arm or leg.</b> If you meant a piece of the body, remove this panel and click on the torso away from the arm (or close the seams so the area is just the piece you want).</span>'
       : '';
+    if (d.hanging) { // draw the side seams and the hem on the 3D panel
+      for (const e of d.edges) {
+        if (!e.name) continue;
+        const line = new THREE.BufferGeometry().setFromPoints(e.vertices.map((v) => new THREE.Vector3(shape.positions[3 * v], shape.positions[3 * v + 1], shape.positions[3 * v + 2])));
+        panelGroup.add(new THREE.Line(line, new THREE.LineBasicMaterial({ color: e.name === 'Hem' ? 0x333333 : 0x10205a, depthTest: false })));
+      }
+    }
     const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">Flare widened to ${d.flareUsed.toFixed(0)}% so the panel clears the body.</span>` : '';
     const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
     rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cmÂ² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}${widened}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
@@ -561,7 +568,15 @@ $('hang-make').onclick = () => {
   if (!(length > 0)) { note.textContent = 'Give a length above 0.'; return; }
   note.textContent = '';
   checkpoint();
-  panels.push({ seed: seams[index].points[0], horizontal: 0, vertical: 0, hang: { seam: index, length, flare, ...($<HTMLInputElement>('hang-fitted').checked ? { fitted: true } : {}) } });
+  const fitted = $<HTMLInputElement>('hang-fitted').checked ? { fitted: true } : {};
+  if (seams[index].closed && seams[index].points.length > 2 && $<HTMLInputElement>('hang-two').checked) {
+    // The side seams go where the seam is furthest out to the side, and opposite.
+    const path = graph.seamPath(shapePositions, seams[index]);
+    let side = 0;
+    for (let i = 3; i < path.length; i += 3) if (Math.abs(path[i]) > Math.abs(path[side])) side = i;
+    const seed = closestSurfacePoint(bodyMesh(), [path[side], path[side + 1], path[side + 2]]);
+    for (const half of [0, 1] as const) panels.push({ seed: { tri: seed.tri, bary: seed.bary }, horizontal: 0, vertical: 0, hang: { seam: index, length, flare, ...fitted, half } });
+  } else panels.push({ seed: seams[index].points[0], horizontal: 0, vertical: 0, hang: { seam: index, length, flare, ...fitted } });
   void changePanels();
 };
 $('allowance').onchange = () => { if (panels.length) void refreshPanels(); };
@@ -806,7 +821,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   if (!hit) return;
   if (pickingSide >= 0) { // the side seam of a hanging panel goes where the click is (the panel cuts open at the nearest point of its seam)
     checkpoint();
-    panels[pickingSide].seed = hit.surface;
+    const picked = panels[pickingSide].hang!;
+    for (const q of panels) if (q.hang && q.hang.seam === picked.seam && (q === panels[pickingSide] || (q.hang.half !== undefined && picked.half !== undefined))) q.seed = hit.surface; // both halves of a skirt share their side seams
     pickingSide = -1;
     renderer.domElement.style.cursor = '';
     void changePanels();

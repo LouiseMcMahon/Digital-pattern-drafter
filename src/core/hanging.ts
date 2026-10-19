@@ -200,3 +200,29 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
   }
   return { mesh: { positions: pos, triangles: Uint32Array.from(triangles) }, columns, rows, gap, flare: used };
 }
+
+/** The part of a hanging panel from column `from` to column `to` (inclusive), as a panel of its own. */
+export function sliceHanging(h: HangingPanel, from: number, to: number): HangingPanel {
+  const { rows } = h;
+  const columns = to - from + 1;
+  const positions = h.mesh.positions.slice(3 * from * rows, 3 * (to + 1) * rows);
+  const gap = h.gap.slice(from * rows, (to + 1) * rows);
+  const triangles: number[] = [];
+  for (let i = 0; i + 1 < columns; i++) for (let j = 0; j + 1 < rows; j++) {
+    const [a, b, c, d] = [i * rows + j, (i + 1) * rows + j, (i + 1) * rows + j + 1, i * rows + j + 1];
+    triangles.push(a, b, c, a, c, d);
+  }
+  return { mesh: { positions, triangles: Uint32Array.from(triangles) }, columns, rows, gap, flare: h.flare };
+}
+
+/** The column of a hanging panel whose seam point is nearest `at`. */
+export function nearestColumn(h: HangingPanel, at: Vec3): number {
+  let best = 0;
+  let bd = Infinity;
+  for (let i = 0; i < h.columns; i++) {
+    const v = i * h.rows;
+    const d = Math.hypot(h.mesh.positions[3 * v] - at[0], h.mesh.positions[3 * v + 1] - at[1], h.mesh.positions[3 * v + 2] - at[2]);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}

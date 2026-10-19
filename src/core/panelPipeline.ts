@@ -1,4 +1,4 @@
-import { buildHanging } from './hanging';
+import { buildHanging, nearestColumn, sliceHanging } from './hanging';
 import { type PanelEdge, area, cutMesh, locateInCut, panelEdges, regionFrom } from './cut';
 import type { PanelSeed } from './design';
 import { drape, drapeSeams } from './drape';
@@ -95,7 +95,16 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       let path = Array.from(graph.seamPath(original.positions, seam));
       const closed = seam.closed && seam.points.length > 2;
       if (closed) path = cutAt(path, pointOnSurface(original, panel.seed)); // the seed is where the side seam goes
-      const built = buildHanging(original, path, { length: hang.length, flare: hang.flare, fitted: hang.fitted });
+      let built = buildHanging(original, path, { length: hang.length, flare: hang.flare, fitted: hang.fitted });
+      // Half of a skirt: the whole is built (so both halves agree on flare and shape), then cut at the side seam and the opposite one.
+      let [startName, endName] = closed ? ['Side seam', 'Side seam'] : ['Side edge', 'Side edge'];
+      if (closed && hang.half !== undefined) {
+        const side = pointOnSurface(original, panel.seed);
+        let opposite = nearestColumn(built, [-side[0], side[1], side[2]]);
+        if (opposite < 2 || opposite > built.columns - 3) opposite = Math.round((built.columns - 1) / 2); // the side seam is on the centre line: split in half
+        built = hang.half === 0 ? sliceHanging(built, 0, opposite) : sliceHanging(built, opposite, built.columns - 1);
+        [startName, endName] = hang.half === 0 ? ['Side seam 1', 'Side seam 2'] : ['Side seam 2', 'Side seam 1'];
+      }
       const loops = boundaryLoops(built.mesh);
       if (loops.length !== 1) return { error: 'This hanging panel is not a single piece.', size: 0, triangles: [] };
       const flat = flatten(built.mesh, { ease: uniformEase(panel.horizontal, panel.vertical) });
@@ -104,12 +113,11 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       const row = (j: number) => Array.from({ length: columns }, (_, i) => i * rows + j);
       const length = (vs: number[]) => vs.slice(1).reduce((s, v, k) => s + len(sub(getVertex(built.mesh, v), getVertex(built.mesh, vs[k]))), 0);
       // Sides in order round the outline: the seam, the far side, the hem (drawn back to the start), the near side.
-      const sideName = closed ? 'Side seam' : 'Side edge';
       const sides: { seam: number | undefined; name?: string; vertices: number[] }[] = [
         { seam: hang.seam, vertices: row(0) },
-        { seam: undefined, name: sideName, vertices: column(columns - 1, 0, rows - 1) },
+        { seam: undefined, name: endName, vertices: column(columns - 1, 0, rows - 1) },
         { seam: undefined, name: 'Hem', vertices: row(rows - 1).reverse() },
-        { seam: undefined, name: sideName, vertices: column(0, rows - 1, 0) },
+        { seam: undefined, name: startName, vertices: column(0, rows - 1, 0) },
       ];
       const triangles = Array.from({ length: built.mesh.triangles.length / 3 }, (_, i) => i);
       return {

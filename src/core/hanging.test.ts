@@ -137,3 +137,24 @@ describe('a fitted (pencil) panel', () => {
     expect(flatOf(panels[0]).flat.worstStrain).toBeGreaterThan(0.02);
   });
 });
+
+describe('two side seams', () => {
+  const side = onTube(Math.PI / 2, 60);
+  const halves = () => computePanels(body, graph, [waist], [0, 1].map((half) => ({ seed: side, horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare: 20, half: half as 0 | 1 } }))).panels.map(flatOf);
+  it('makes a front and a back that together are the whole skirt', () => {
+    const [a, b] = halves();
+    const whole = flatOf(computePanels(body, graph, [waist], [{ seed: side, horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare: 20 } }]).panels[0]);
+    expect(a.edges[0].length + b.edges[0].length).toBeCloseTo(whole.edges[0].length, 3);
+    expect(a.edges[0].length).toBeGreaterThan(0.4 * whole.edges[0].length);
+    expect(a.edges[0].length).toBeLessThan(0.6 * whole.edges[0].length);
+    expect(a.size + b.size).toBeCloseTo(whole.size, 3);
+  });
+  it('names the side seams and gives the two panels the same side seams', () => {
+    const [a, b] = halves();
+    expect(a.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 2', 'Hem', 'Side seam 1']);
+    expect(b.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 1', 'Hem', 'Side seam 2']);
+    const length = (p: PanelFlat, name: string) => p.edges.find((e) => e.name === name)!.length;
+    expect(length(a, 'Side seam 1')).toBeCloseTo(length(b, 'Side seam 1'), 6);
+    expect(length(a, 'Side seam 2')).toBeCloseTo(length(b, 'Side seam 2'), 6);
+  });
+});
