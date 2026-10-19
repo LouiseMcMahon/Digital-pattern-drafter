@@ -4,6 +4,9 @@ import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyMod
 import { GUIDE_RINGS, centreLines, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { offsetOutline } from './core/allowance';
+import { sheetToPdf } from './core/exportPdf';
+import { sheetToSvg } from './core/exportSvg';
+import { type PieceInput, buildSheet } from './core/sheet';
 import { type ClothPatternResult, type ClothPiece, type ClothProgress } from './core/cloth';
 import type { ClothMessage, ClothRequest } from './cloth.worker';
 import { splitCrossings } from './core/crossings';
@@ -68,6 +71,8 @@ controls.innerHTML = `
     <label class="row">Colour panels by <select id="panel-colour" class="grow"><option value="lift">lift off the body</option><option value="strain">strain (red/blue) or panel colour</option></select></label>
     <div id="lift-key" class="hint"></div>
     <div id="panels"></div>
+    <div id="seam-check"></div>
+    <div class="row"><button id="export-svg" class="grow" title="Every flat piece at full size (1 unit = 1 cm) with seam allowance, notches and seam numbers. Pieces that cannot lie flat are left out.">Export SVG</button><button id="export-pdf" class="grow" title="The same, on A4 pages to print at 100% and tape together, with a 5 cm square to check the print size.">Export PDF (A4 tiles)</button></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
   </div></details>
   </div>
@@ -357,6 +362,8 @@ type Panel = PanelSeed;
 let panels: Panel[] = [];
 let pickingPanel = false;
 let outlines: [number, number][][] = []; // the flat outline of each panel, for tests
+let exportPieces: PieceInput[] = []; // the flat pieces that are valid patterns (they lie flat), for the seam check and the exports
+let exportSkipped: string[] = []; // the panels left out of them, and why
 const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
 
 /** Strain colours: red where a piece would have to stretch to lie flat, blue where it would have to squeeze, near-white where it fits. */
@@ -408,6 +415,9 @@ function refreshPanels(): Promise<void> {
     $('panels').innerHTML = '<span class="hint">No panels yet. Close some seams, press Make a panel, then click inside them.</span>';
     $<SVGSVGElement & HTMLElement>('flat').style.display = 'none';
     outlines = [];
+    exportPieces = [];
+    exportSkipped = [];
+    $('seam-check').innerHTML = '';
     render();
     return Promise.resolve();
   }
@@ -427,6 +437,8 @@ function renderPanels(result: PanelsResult) {
   const shapes: string[] = [];
   const labels: string[] = [];
   outlines = [];
+  exportPieces = [];
+  exportSkipped = [];
   const allowance = Math.max(0, parseFloat($<HTMLInputElement>('allowance').value) || 0);
   let x = 0;
   let top = 0;
@@ -443,7 +455,7 @@ function renderPanels(result: PanelsResult) {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
-    if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
+    if (d.error !== undefined) { exportSkipped.push(`Panel ${i + 1} (${d.error})`); rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
     // pattern length. What is left of stretch is real; where the patterns cannot reach the seam lines without stretching, the seam falls short instead.
@@ -488,6 +500,11 @@ function renderPanels(result: PanelsResult) {
     const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
     const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(pat.uv[2 * a] - pat.uv[2 * b], pat.uv[2 * a + 1] - pat.uv[2 * b + 1]); }, 0);
     const drapedLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(...[0, 1, 2].map((c) => shape.positions[3 * a + c] - shape.positions[3 * b + c]) as [number, number, number]); }, 0);
+    if (tooCurved) exportSkipped.push(`Panel ${i + 1} (cannot lie flat: stretch ${(100 * strain.worstStrain).toFixed(1)}%)`);
+    else {
+      const uvOf = (v: number): [number, number] => [pat.uv[2 * v], pat.uv[2 * v + 1]];
+      exportPieces.push({ name: `Panel ${i + 1}`, loop: d.loop.map(uvOf), sides: d.edges.map((e) => ({ seam: e.seam, vertices: e.vertices, points: e.vertices.map((v) => uvOf(subOf.get(v)!)) })) });
+    }
     const sides: string[] = [];
     for (const e of d.edges) {
       if (e.seam === undefined) continue;
@@ -508,6 +525,7 @@ function renderPanels(result: PanelsResult) {
     rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
   $('panels').innerHTML = rows.join('');
+  renderSeamCheck();
   svg.style.display = shapes.length ? 'block' : 'none';
   if (shapes.length) {
     svg.setAttribute('viewBox', `-1 -1 ${(x + 2).toFixed(1)} ${(top + 2).toFixed(1)}`);
@@ -522,6 +540,35 @@ function renderPanels(result: PanelsResult) {
   });
   render();
 }
+/** The paired-seam check: for every seam two pieces share, the two flat lengths and which piece is longer. */
+function renderSeamCheck() {
+  const pairs = buildSheet(exportPieces, { allowance: 0 }).pairs;
+  $('seam-check').innerHTML = pairs.length
+    ? `<b>Seams sewn together</b><br><span class="sides">${pairs.map((q) => {
+      const [a, b] = [exportPieces[q.a.piece].name, exportPieces[q.b.piece].name];
+      return q.ok
+        ? `Seam ${q.seam + 1}: ${a} ${q.a.length.toFixed(1)} cm, ${b} ${q.b.length.toFixed(1)} cm <span class="ok">match</span>`
+        : `Seam ${q.seam + 1}: ${a} ${q.a.length.toFixed(1)} cm, ${b} ${q.b.length.toFixed(1)} cm <span class="bad">${q.difference > 0 ? a : b} is ${Math.abs(q.difference).toFixed(1)} cm (${q.percent.toFixed(1)}%) longer: ease it in or change the ease</span>`;
+    }).join('<br>')}</span>`
+    : '';
+}
+function download(name: string, type: string, data: BlobPart) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([data], { type }));
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+/** Exports the pieces that lie flat; says which panels were left out and why. */
+function exportPattern(kind: 'svg' | 'pdf') {
+  if (!exportPieces.length) { status.textContent = `Nothing to export: ${exportSkipped.length ? `no panel can be cut from this design (${exportSkipped.join('; ')})` : 'make a panel first'}.`; return; }
+  const sheet = buildSheet(exportPieces, { allowance: Math.max(0, parseFloat($<HTMLInputElement>('allowance').value) || 0) });
+  if (kind === 'svg') download('pattern.svg', 'image/svg+xml', sheetToSvg(sheet));
+  else download('pattern.pdf', 'application/pdf', sheetToPdf(sheet));
+  status.textContent = `Exported ${exportPieces.length} piece${exportPieces.length === 1 ? '' : 's'} to pattern.${kind}${exportSkipped.length ? `; left out: ${exportSkipped.join('; ')}` : ''}.`;
+}
+$('export-svg').onclick = () => exportPattern('svg');
+$('export-pdf').onclick = () => exportPattern('pdf');
 $('allowance').onchange = () => { if (panels.length) void refreshPanels(); };
 $('panel-pick').onclick = () => {
   pickingPanel = !pickingPanel;
