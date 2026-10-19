@@ -50,7 +50,10 @@ describe('buildHanging', () => {
     const h = buildHanging(wide, path, { length: 30, flare: 0 });
     const lowest = h.rows - 1;
     expect(Math.hypot(h.mesh.positions[3 * lowest], h.mesh.positions[3 * lowest + 2])).toBeGreaterThan(14);
-    expect(h.flare).toBeGreaterThan(30); // widened from 0 to clear the wide part
+    expect(h.flare).toBe(0); // the flare is what was asked for: the body is not allowed to change it
+    expect(h.clearFlare).toBeGreaterThan(30); // it would take this much to clear the wide part
+    const patternHem = Math.hypot(h.pattern.positions[3 * lowest], h.pattern.positions[3 * lowest + 2]);
+    expect(patternHem).toBeLessThan(11); // the pattern is still the straight cone
   });
 
   it('clears the trunk but ignores an arm hanging beside it', () => {
@@ -204,15 +207,16 @@ describe('a skirt to the floor', () => {
   });
 });
 
-describe('flare on top of what it takes to clear the body', () => {
-  it('a bigger flare makes a bigger hem even where the body forces a wide one', () => {
+describe('flare is as asked, whatever the body does', () => {
+  it('a bigger flare makes a bigger pattern hem even where the body is in the way, and the strain says what the body costs', () => {
     const wide = tube(10);
     for (let v = 0; v < wide.positions.length / 3; v++) if (wide.positions[3 * v + 1] < 55) { wide.positions[3 * v] *= 1.5; wide.positions[3 * v + 2] *= 1.5; }
-    const path = Array.from({ length: 49 }, (_, k) => [10 * Math.cos((2 * Math.PI * k) / 48), 60, 10 * Math.sin((2 * Math.PI * k) / 48)]).flat();
-    const [a, b] = [0, 40].map((flare) => buildHanging(wide, path, { length: 30, flare }));
-    expect(a.flare).toBeGreaterThan(30); // forced by the wide part
-    expect(b.flare).toBeCloseTo(a.flare + 40, 6);
-    const hem = (h: ReturnType<typeof buildHanging>) => Math.hypot(h.mesh.positions[3 * (h.rows - 1)], h.mesh.positions[3 * (h.rows - 1) + 2]);
-    expect(hem(b)).toBeGreaterThan(hem(a) * 1.1);
+    const g = new SurfaceGraph(wide.triangles, wide.positions.length / 3);
+    const seam: Seam = { points: [0, 1, 2, 3].map((k) => { const a = (k * Math.PI) / 2; const hit = raycast(wide, [30 * Math.cos(a), 60, 30 * Math.sin(a)], [-Math.cos(a), 0, -Math.sin(a)])!; return { tri: hit.tri, bary: hit.bary }; }), closed: true };
+    const make = (flare: number) => flatOf(computePanels(wide, g, [seam], [{ seed: seam.points[0], horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare } }]).panels[0]);
+    const [a, b, c] = [0, 40, 200].map(make);
+    expect(b.edges[2].flatLength).toBeGreaterThan(a.edges[2].flatLength * 1.3);
+    expect(a.flat.worstStrain).toBeGreaterThan(0.1); // a straight skirt cannot go over wider hips
+    expect(c.flat.worstStrain).toBeLessThan(a.flat.worstStrain);
   });
 });

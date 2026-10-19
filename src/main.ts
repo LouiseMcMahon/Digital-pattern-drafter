@@ -524,11 +524,11 @@ function renderPanels(result: PanelsResult) {
       labels.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="2.2" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.6" paint-order="stroke">${e.seam + 1}: ${flatLength(e.vertices).toFixed(1)}</text>`);
     }
     const verdict = tooCurved
-      ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * strain.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
+      ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * strain.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). ${d.hanging ? (hang?.fitted ? 'A fitted skirt needs darts to lie flat, which hanging panels do not have yet: hang it from a seam at the hip line instead, or use a flared (not fitted) panel.' : 'The cone pattern cannot go over the hips as drawn: more flare, a seam lower down, or darts (not built yet) bring this down. Simulate cloth to see how it settles.') : 'Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.'}</span>`
       : `<span class="ok">Lies flat (worst stretch ${(100 * strain.worstStrain).toFixed(1)}%).</span>`;
     // A piece that is hopelessly out of shape (tens of percent, or many flipped triangles) is nearly always an area that
     // runs on into an arm, leg or hand: a click near the armhole lands on the arm, which is in front of the body's side.
-    const limbHint = strain.worstStrain > 0.3 || pat.flippedTriangles > 0.02 * (d.sub.mesh.triangles.length / 3)
+    const limbHint = !d.hanging && strain.worstStrain > 0.3 || pat.flippedTriangles > 0.02 * (d.sub.mesh.triangles.length / 3)
       ? '<span class="bad"><b>This area probably runs on into an arm or leg.</b> If you meant a piece of the body, remove this panel and click on the torso away from the arm (or close the seams so the area is just the piece you want).</span>'
       : '';
     if (d.hanging) { // draw the side seams and the hem on the 3D panel
@@ -547,7 +547,7 @@ function renderPanels(result: PanelsResult) {
         }
       }
     }
-    const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">${(d.flareUsed - (hang?.flare ?? 0)).toFixed(0)}% of flare is needed just to clear the body, so the hem is ${d.flareUsed.toFixed(0)}% out in all (your flare is added on top).</span>` : '';
+    const widened = d.hanging && !hang?.fitted && (d.clearFlare ?? 0) > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">The hips are in the way at this flare (${d.clearFlare!.toFixed(0)}% would just clear them): the panel is shown pushed out, and the strain is what it costs. The cloth simulation settles it; more flare, a lower seam, or darts lower the strain.</span>` : '';
     const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
     rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}${widened}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
   });

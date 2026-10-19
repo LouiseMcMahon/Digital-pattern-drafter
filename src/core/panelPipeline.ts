@@ -1,4 +1,4 @@
-import { buildHanging, nearestColumn, sliceHanging } from './hanging';
+import { buildHanging, nearestColumn, sliceHanging, strainBetween } from './hanging';
 import { type PanelEdge, area, cutMesh, locateInCut, panelEdges, regionFrom } from './cut';
 import type { PanelSeed } from './design';
 import { drape, drapeSeams } from './drape';
@@ -34,6 +34,8 @@ export interface PanelFlat {
   hangLength?: number;
   /** For a hanging panel: the flare used, which is more than asked for where the panel would otherwise pass through the body. */
   flareUsed?: number;
+  /** For a hanging cone: the flare it would take to clear the body without being pushed out. */
+  clearFlare?: number;
   size: number;
   /** Triangles of the cut mesh in this panel. */
   triangles: number[];
@@ -125,7 +127,10 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       }
       const loops = boundaryLoops(built.mesh);
       if (loops.length !== 1) return { error: 'This hanging panel is not a single piece.', size: 0, triangles: [] };
-      const flat = flatten(built.mesh, { ease: uniformEase(panel.horizontal, panel.vertical) });
+      // The pattern is flattened from the cone; strain is what it costs to put the (pushed out) hanging shape on that pattern.
+      const patternFlat = flatten(built.pattern, { ease: uniformEase(panel.horizontal, panel.vertical) });
+      const cost = strainBetween(built.mesh, patternFlat.uv);
+      const flat = { ...patternFlat, worstStrain: built.pattern.positions === built.mesh.positions ? patternFlat.worstStrain : cost.worstStrain, vertexStrain: built.pattern.positions === built.mesh.positions ? patternFlat.vertexStrain : cost.vertexStrain };
       const { columns, rows } = built;
       const column = (i: number, from: number, to: number) => Array.from({ length: Math.abs(to - from) + 1 }, (_, k) => i * rows + (from <= to ? from + k : from - k));
       const row = (j: number) => Array.from({ length: columns }, (_, i) => i * rows + j);
@@ -139,7 +144,7 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       ];
       const triangles = Array.from({ length: built.mesh.triangles.length / 3 }, (_, i) => i);
       return {
-        hanging: true, flareUsed: built.flare, hangLength,
+        hanging: true, flareUsed: built.flare, clearFlare: built.clearFlare, hangLength,
         // The last column of a closed seam is the first again: the same place on the whole skirt, so the same vertices where the sides are sewn.
         sewIds: Array.from({ length: built.mesh.positions.length / 3 }, (_, v) => { const column = firstColumn + Math.floor(v / built.rows); return (closed && column === wholeColumns - 1 ? 0 : column) * built.rows + (v % built.rows); }),
         sewSize: wholeColumns * built.rows, size: area(built.mesh, triangles), triangles,

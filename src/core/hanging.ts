@@ -26,13 +26,18 @@ export interface HangingOptions {
 }
 
 export interface HangingPanel {
+  /** The panel as it hangs: for a fitted panel that is also its pattern; otherwise the cone pushed out of the body where it would pass through. */
   mesh: Mesh;
+  /** The same vertices on the pattern's own surface: the cone, which lies flat. The same as `mesh` for a fitted panel. */
+  pattern: Mesh;
+  /** For a cone: the flare it would take to clear the body without being pushed (0 for a fitted panel). */
+  clearFlare: number;
   /** Vertex columns across the panel, and rows down it (row 0 is the seam). */
   columns: number;
   rows: number;
   /** Per vertex: height off the body (cm). */
   gap: Float64Array;
-  /** The flare actually used: the one asked for plus, where the panel would otherwise have to pass through the body (a skirt over wide hips), the flare it takes to clear it. */
+  /** The flare used (as asked for). */
   flare: number;
 }
 
@@ -164,10 +169,11 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
     if (!options.fitted && radius[i] > 1e-9) needed = Math.max(needed, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
   }
 
-  const used = flare + needed; // what is asked for comes on top of what it takes to clear the body
+  const used = flare;
   const pos = new Float64Array(3 * columns * rows);
   const gap = new Float64Array(columns * rows);
   const out = new Float64Array(columns * rows); // distance of each vertex from the middle line
+  const cone = new Float64Array(columns * rows); // the same on the pattern's cone
   if (options.fitted) {
     // Follow the trunk to its widest row, then run to the hem.
     let hipRow = 1;
@@ -189,20 +195,27 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
       }
     }
   } else {
-    for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) out[index(i, j)] = radius[i] * (1 + ((j / (rows - 1)) * used) / 100);
+    for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) cone[index(i, j)] = radius[i] * (1 + ((j / (rows - 1)) * used) / 100);
+    out.set(cone);
+    // Where the cone would pass through the body it is pushed out for display. The pattern stays the cone: the cloth simulation
+    // (and the strain between the two) shows what it takes to get a cone of this flare over the hips.
+    for (let i = 0; i < columns; i++) for (let j = 1; j < rows; j++) if (Number.isFinite(reach[index(i, j)])) out[index(i, j)] = Math.max(cone[index(i, j)], reach[index(i, j)] + (0.05 * j) / (rows - 1));
   }
-  for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
-    const r = out[index(i, j)];
-    pos.set([middle[0] + direction[i][0] * r, seam[i][1] - (j / (rows - 1)) * length, middle[2] + direction[i][1] * r], 3 * index(i, j));
-    gap[index(i, j)] = Number.isFinite(reach[index(i, j)]) ? Math.max(0, r - reach[index(i, j)]) : 0;
-  }
+  const place = (radii: Float64Array) => {
+    const p = new Float64Array(3 * columns * rows);
+    for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) p.set([middle[0] + direction[i][0] * radii[index(i, j)], seam[i][1] - (j / (rows - 1)) * length, middle[2] + direction[i][1] * radii[index(i, j)]], 3 * index(i, j));
+    return p;
+  };
+  pos.set(place(out));
+  for (let v = 0; v < gap.length; v++) gap[v] = Number.isFinite(reach[v]) ? Math.max(0, out[v] - reach[v]) : 0;
 
   const triangles: number[] = [];
   for (let i = 0; i + 1 < columns; i++) for (let j = 0; j + 1 < rows; j++) {
     const [a, b, c, d] = [index(i, j), index(i + 1, j), index(i + 1, j + 1), index(i, j + 1)];
     triangles.push(a, b, c, a, c, d);
   }
-  return { mesh: { positions: pos, triangles: Uint32Array.from(triangles) }, columns, rows, gap, flare: used };
+  const tri = Uint32Array.from(triangles);
+  return { mesh: { positions: pos, triangles: tri }, pattern: options.fitted ? { positions: pos, triangles: tri } : { positions: place(cone), triangles: tri }, clearFlare: options.fitted ? 0 : needed, columns, rows, gap, flare: used };
 }
 
 /** The part of a hanging panel from column `from` to column `to` (inclusive), as a panel of its own. */
@@ -210,13 +223,15 @@ export function sliceHanging(h: HangingPanel, from: number, to: number): Hanging
   const { rows } = h;
   const columns = to - from + 1;
   const positions = h.mesh.positions.slice(3 * from * rows, 3 * (to + 1) * rows);
+  const patternPositions = h.pattern.positions === h.mesh.positions ? positions : h.pattern.positions.slice(3 * from * rows, 3 * (to + 1) * rows);
   const gap = h.gap.slice(from * rows, (to + 1) * rows);
   const triangles: number[] = [];
   for (let i = 0; i + 1 < columns; i++) for (let j = 0; j + 1 < rows; j++) {
     const [a, b, c, d] = [i * rows + j, (i + 1) * rows + j, (i + 1) * rows + j + 1, i * rows + j + 1];
     triangles.push(a, b, c, a, c, d);
   }
-  return { mesh: { positions, triangles: Uint32Array.from(triangles) }, columns, rows, gap, flare: h.flare };
+  const tri = Uint32Array.from(triangles);
+  return { mesh: { positions, triangles: tri }, pattern: { positions: patternPositions, triangles: tri }, clearFlare: h.clearFlare, columns, rows, gap, flare: h.flare };
 }
 
 /** The column of a hanging panel whose seam point is nearest `at`. */
@@ -229,4 +244,30 @@ export function nearestColumn(h: HangingPanel, at: Vec3): number {
     if (d < bd) { bd = d; best = i; }
   }
   return best;
+}
+
+/**
+ * How much a mesh would have to stretch or squeeze to lie on a flat pattern of its own triangles: the 98th percentile of
+ * |flat length / 3D length - 1| over the edges (very short ones left out), and the mean of that over each vertex's edges.
+ */
+export function strainBetween(mesh: Mesh, uv: ArrayLike<number>): { worstStrain: number; vertexStrain: Float64Array } {
+  const n = mesh.positions.length / 3;
+  const sum = new Float64Array(n);
+  const degree = new Float64Array(n);
+  const all: number[] = [];
+  const seen = new Set<number>();
+  for (let t = 0; t < mesh.triangles.length / 3; t++) for (let k = 0; k < 3; k++) {
+    const [a, b] = [mesh.triangles[3 * t + k], mesh.triangles[3 * t + ((k + 1) % 3)]];
+    const key = Math.min(a, b) * n + Math.max(a, b);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const l3 = Math.hypot(mesh.positions[3 * a] - mesh.positions[3 * b], mesh.positions[3 * a + 1] - mesh.positions[3 * b + 1], mesh.positions[3 * a + 2] - mesh.positions[3 * b + 2]);
+    const l2 = Math.hypot(uv[2 * a] - uv[2 * b], uv[2 * a + 1] - uv[2 * b + 1]);
+    if (l3 < 1e-9) continue;
+    const s = l2 / l3 - 1;
+    sum[a] += s; sum[b] += s; degree[a]++; degree[b]++;
+    if (l3 > 0.05) all.push(Math.abs(s));
+  }
+  all.sort((p, q) => p - q);
+  return { worstStrain: all.length ? all[Math.min(all.length - 1, Math.floor(0.98 * all.length))] : 0, vertexStrain: Float64Array.from(sum, (v, i) => (degree[i] ? v / degree[i] : 0)) };
 }
