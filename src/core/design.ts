@@ -1,0 +1,66 @@
+import type { Seam, SurfacePoint } from './seam';
+
+/** A panel is remembered by a point inside it (so it follows the seams and the body) and its own ease, in percent. */
+export interface PanelSeed { seed: SurfacePoint; horizontal: number; vertical: number }
+
+/** Everything the user draws on the body: the seams (the last is the one being drawn) and the panels. */
+export interface Design { seams: Seam[]; panels: PanelSeed[] }
+
+const FORMAT = 'digital-pattern-drafter-design';
+export const DESIGN_VERSION = 1;
+/** Barycentric weights must sum to 1 and not be negative, to this much (rounding in a saved file). */
+const BARY_TOLERANCE = 1e-6;
+
+const copyPoint = (p: SurfacePoint): SurfacePoint => ({ tri: p.tri, bary: [p.bary[0], p.bary[1], p.bary[2]] });
+
+export function cloneDesign(d: Design): Design {
+  return {
+    seams: d.seams.map((s) => ({ points: s.points.map(copyPoint), closed: s.closed })),
+    panels: d.panels.map((p) => ({ seed: copyPoint(p.seed), horizontal: p.horizontal, vertical: p.vertical })),
+  };
+}
+
+/** The design as a text file. `triangleCount` is the body mesh's, so a file is never applied to a different mesh. */
+export function serializeDesign(d: Design, triangleCount: number): string {
+  return JSON.stringify({ format: FORMAT, version: DESIGN_VERSION, triangleCount, ...cloneDesign(d) }, null, 1);
+}
+
+function fail(message: string): never {
+  throw new Error(`Not a usable design file: ${message}`);
+}
+
+function readPoint(value: unknown, triangleCount: number, where: string): SurfacePoint {
+  const p = value as { tri?: unknown; bary?: unknown } | null;
+  if (typeof p !== 'object' || p === null) fail(`${where} is not a point`);
+  const { tri, bary } = p;
+  if (typeof tri !== 'number' || !Number.isInteger(tri) || tri < 0 || tri >= triangleCount) fail(`${where} is on a triangle the body does not have`);
+  if (!Array.isArray(bary) || bary.length !== 3 || bary.some((w) => typeof w !== 'number' || !Number.isFinite(w) || w < -BARY_TOLERANCE)) fail(`${where} has invalid weights`);
+  if (Math.abs(bary[0] + bary[1] + bary[2] - 1) > BARY_TOLERANCE) fail(`${where} has weights that do not add up to 1`);
+  return { tri, bary: [bary[0], bary[1], bary[2]] };
+}
+
+/** Reads a saved design, checking everything: a bad or foreign file throws an Error saying what is wrong and changes nothing. */
+export function parseDesign(text: string, triangleCount: number): Design {
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return fail('it is not valid JSON');
+  }
+  if (typeof raw !== 'object' || raw === null || raw.format !== FORMAT) fail('it is not a design saved by this app');
+  if (raw.version !== DESIGN_VERSION) fail(`it is version ${String(raw.version)}, this app reads version ${DESIGN_VERSION}`);
+  if (raw.triangleCount !== triangleCount) fail('it was saved for a different body mesh');
+  if (!Array.isArray(raw.seams) || !Array.isArray(raw.panels)) fail('it has no seams or panels list');
+  const seams = raw.seams.map((s: { points?: unknown; closed?: unknown }, i: number): Seam => {
+    if (typeof s !== 'object' || s === null || !Array.isArray(s.points)) fail(`seam ${i + 1} has no points`);
+    if (typeof s.closed !== 'boolean') fail(`seam ${i + 1} does not say whether it is closed`);
+    if (s.closed && s.points.length < 3) fail(`seam ${i + 1} is closed but has fewer than 3 points`);
+    return { points: s.points.map((p: unknown, k: number) => readPoint(p, triangleCount, `seam ${i + 1} point ${k + 1}`)), closed: s.closed };
+  });
+  const panels = raw.panels.map((p: { seed?: unknown; horizontal?: unknown; vertical?: unknown }, i: number): PanelSeed => {
+    if (typeof p !== 'object' || p === null) fail(`panel ${i + 1} is not an object`);
+    if (typeof p.horizontal !== 'number' || !Number.isFinite(p.horizontal) || typeof p.vertical !== 'number' || !Number.isFinite(p.vertical)) fail(`panel ${i + 1} has no valid ease`);
+    return { seed: readPoint(p.seed, triangleCount, `panel ${i + 1} seed`), horizontal: p.horizontal, vertical: p.vertical };
+  });
+  return { seams, panels };
+}
