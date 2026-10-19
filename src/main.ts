@@ -475,7 +475,7 @@ function renderPanels(result: PanelsResult) {
     const hang = panels[i]?.hang;
     const shownLength = hang?.toFloor && d.error === undefined && d.hangLength !== undefined ? d.hangLength.toFixed(0) : String(hang?.length);
     const hangInputs = hang ? `<label title="Length from the seam down to the hem (cm)">length <input type="number" step="1" min="1" value="${shownLength}" ${hang.toFloor ? 'disabled ' : ''}data-hang="${i}" data-field="length">cm</label><label title="Hem at the floor"><input type="checkbox" data-hang-floor="${i}"${hang.toFloor ? ' checked' : ''}>floor</label><label title="Flare, %: added to whatever flare it takes to clear the hips (a skirt from the waist needs a lot). Fitted: the hem width against the hips.">flare <input type="number" step="5" value="${hang.flare}" data-hang="${i}" data-field="flare">%</label>` : '';
-    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (${hang.fitted ? 'fitted, ' : ''}${hang.half === undefined ? '' : hang.half === 0 ? 'half 1, ' : 'half 2, '}hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body� (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}${hang ? ` (${hang.fitted ? 'fitted, ' : ''}${hang.half === undefined ? '' : hang.half === 0 ? 'half 1, ' : 'half 2, '}hangs from seam ${hang.seam + 1})` : ''}</b>${hangInputs}${hang && seams[hang.seam]?.closed ? `<button data-side-panel="${i}" title="Then click on the body where the side seam should be">${pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam'}</button>` : ''}<label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
     if (d.error !== undefined) { exportSkipped.push(`Panel ${i + 1} (${d.error})`); rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
@@ -602,7 +602,7 @@ function renderPanels(result: PanelsResult) {
     el.onclick = () => {
       const i = Number(el.dataset.sidePanel);
       pickingSide = pickingSide === i ? -1 : i;
-      el.textContent = pickingSide === i ? 'Click the body� (cancel)' : 'Choose side seam';
+      el.textContent = pickingSide === i ? 'Click the body… (cancel)' : 'Choose side seam';
       renderer.domElement.style.cursor = pickingSide >= 0 ? 'crosshair' : '';
     };
   });
