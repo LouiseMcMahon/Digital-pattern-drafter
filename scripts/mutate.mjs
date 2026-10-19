@@ -29,6 +29,9 @@ const MODULES = {
   design: { mutate: 'src/core/design.ts', tests: ['src/core/design.test.ts'] },
   crossings: { mutate: 'src/core/crossings.ts', tests: ['src/core/crossings.test.ts'] },
   allowance: { mutate: 'src/core/allowance.ts', tests: ['src/core/allowance.test.ts'] },
+  sheet: { mutate: 'src/core/sheet.ts', tests: ['src/core/sheet.test.ts'] },
+  exportSvg: { mutate: 'src/core/exportSvg.ts', tests: ['src/core/export.test.ts'] },
+  exportPdf: { mutate: 'src/core/exportPdf.ts', tests: ['src/core/export.test.ts'] },
   panelPipeline: { mutate: 'src/core/panelPipeline.ts', tests: ['src/core/panelPipeline.test.ts', 'src/core/panelPipeline.failure.test.ts'] },
   // pose.test.ts covers the default-pose path through evaluate() on the real body.
   bodyModel: { mutate: 'src/core/bodyModel.ts', tests: ['src/core/bodyModel.synthetic.test.ts', 'src/core/bodyModel.test.ts'] },
