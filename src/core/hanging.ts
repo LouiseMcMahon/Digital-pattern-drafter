@@ -17,6 +17,8 @@ export interface HangingOptions {
    * so it does not lie flat on its own: the strain shows how much shaping (darts) the pattern needs.
    */
   fitted?: boolean;
+  /** Rays below this height are not tested against the body, so a skirt hangs over the feet and does not flare out round the toes. */
+  ignoreBelow?: number;
   /** Distance kept between the cloth and the body at the hem (cm); it grows from nothing at the seam. Default 0.3. */
   standoff?: number;
   /** Target spacing of the mesh (cm). Default 1.5. */
@@ -155,6 +157,7 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
   for (let i = 0; i < columns; i++) for (let j = 1; j < rows; j++) {
     const t = j / (rows - 1);
     const y = seam[i][1] - t * length;
+    if (options.ignoreBelow !== undefined && y < options.ignoreBelow) continue;
     const hit = firstHit(body, minY, maxY, [middle[0], y, middle[2]], direction[i][0], direction[i][1]);
     if (hit === undefined) continue;
     reach[index(i, j)] = hit;

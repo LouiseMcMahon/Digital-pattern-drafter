@@ -7,6 +7,10 @@ import { flatten } from './flatten';
 import { type Mesh, boundaryLoops, extractSubmesh, getVertex, len, sub } from './mesh';
 import { type Seam, SurfaceGraph, pointOnSurface } from './seam';
 
+/** How far above the floor a hem to the floor stops (cm), and the height of the foot, whose toes a skirt hangs over (cm). */
+const FLOOR_GAP = 0.3;
+const FOOT_HEIGHT = 12;
+
 /** A region bigger than this share of the body is not enclosed by the seams. */
 export const MAX_PANEL_SHARE = 0.6;
 
@@ -23,6 +27,11 @@ export interface PanelFlat {
   error?: undefined;
   /** Set for a panel that hangs free from a seam: it is not part of the body's cut mesh, so it is not sewn to other panels by shared vertices. */
   hanging?: true;
+  /** For a hanging panel: the number of each vertex in the whole skirt it was cut from (so halves agree along the side seams they share), and how many vertices the whole skirt has. */
+  sewIds?: number[];
+  sewSize?: number;
+  /** For a hanging panel: the length it hangs, which is worked out when the hem goes to the floor. */
+  hangLength?: number;
   /** For a hanging panel: the flare used, which is more than asked for where the panel would otherwise pass through the body. */
   flareUsed?: number;
   size: number;
@@ -95,14 +104,23 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       let path = Array.from(graph.seamPath(original.positions, seam));
       const closed = seam.closed && seam.points.length > 2;
       if (closed) path = cutAt(path, pointOnSurface(original, panel.seed)); // the seed is where the side seam goes
-      let built = buildHanging(original, path, { length: hang.length, flare: hang.flare, fitted: hang.fitted });
+      let floorY = Infinity;
+      for (let i = 1; i < original.positions.length; i += 3) floorY = Math.min(floorY, original.positions[i]);
+      let seamY = 0;
+      for (let i = 1; i < path.length; i += 3) seamY += path[i] / (path.length / 3);
+      const hangLength = hang.toFloor ? seamY - floorY - FLOOR_GAP : hang.length;
+      if (!(hangLength > 0)) return { error: 'The seam is at or below the floor: there is no skirt to hang.', size: 0, triangles: [] };
+      let built = buildHanging(original, path, { length: hangLength, flare: hang.flare, fitted: hang.fitted, ignoreBelow: floorY + FOOT_HEIGHT });
+      const wholeColumns = built.columns;
+      let firstColumn = 0;
       // Half of a skirt: the whole is built (so both halves agree on flare and shape), then cut at the side seam and the opposite one.
       let [startName, endName] = closed ? ['Side seam', 'Side seam'] : ['Side edge', 'Side edge'];
       if (closed && hang.half !== undefined) {
         const side = pointOnSurface(original, panel.seed);
         let opposite = nearestColumn(built, [-side[0], side[1], side[2]]);
         if (opposite < 2 || opposite > built.columns - 3) opposite = Math.round((built.columns - 1) / 2); // the side seam is on the centre line: split in half
-        built = hang.half === 0 ? sliceHanging(built, 0, opposite) : sliceHanging(built, opposite, built.columns - 1);
+        firstColumn = hang.half === 0 ? 0 : opposite;
+        built = hang.half === 0 ? sliceHanging(built, 0, opposite) : sliceHanging(built, opposite, wholeColumns - 1);
         [startName, endName] = hang.half === 0 ? ['Side seam 1', 'Side seam 2'] : ['Side seam 2', 'Side seam 1'];
       }
       const loops = boundaryLoops(built.mesh);
@@ -116,12 +134,15 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       const sides: { seam: number | undefined; name?: string; vertices: number[] }[] = [
         { seam: hang.seam, vertices: row(0) },
         { seam: undefined, name: endName, vertices: column(columns - 1, 0, rows - 1) },
-        { seam: undefined, name: 'Hem', vertices: row(rows - 1).reverse() },
+        { seam: undefined, name: 'Hem seam', vertices: row(rows - 1).reverse() },
         { seam: undefined, name: startName, vertices: column(0, rows - 1, 0) },
       ];
       const triangles = Array.from({ length: built.mesh.triangles.length / 3 }, (_, i) => i);
       return {
-        hanging: true, flareUsed: built.flare, size: area(built.mesh, triangles), triangles,
+        hanging: true, flareUsed: built.flare, hangLength,
+        // The last column of a closed seam is the first again: the same place on the whole skirt, so the same vertices where the sides are sewn.
+        sewIds: Array.from({ length: built.mesh.positions.length / 3 }, (_, v) => { const column = firstColumn + Math.floor(v / built.rows); return (closed && column === wholeColumns - 1 ? 0 : column) * built.rows + (v % built.rows); }),
+        sewSize: wholeColumns * built.rows, size: area(built.mesh, triangles), triangles,
         sub: { mesh: built.mesh, vertexMap: Array.from({ length: built.mesh.positions.length / 3 }, (_, i) => i) },
         draped: built.mesh, gap: built.gap, loop: loops[0],
         edges: sides.map((e) => ({ ...e, length: length(e.vertices), flatLength: flatLengthOf(flat.uv, e.vertices) })),

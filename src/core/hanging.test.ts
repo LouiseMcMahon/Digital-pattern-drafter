@@ -107,7 +107,7 @@ describe('the side seam of a closed hanging panel', () => {
     const seed = onTube(Math.PI / 2, 60); // the side of the body, a quarter of the way round from the first seam point
     const { panels } = computePanels(body, graph, [waist], [{ seed, horizontal: 0, vertical: 0, hang: { seam: 0, length: 30, flare: 0 } }]);
     const p = flatOf(panels[0]);
-    expect(p.edges.map((e) => e.name)).toEqual([undefined, 'Side seam', 'Hem', 'Side seam']);
+    expect(p.edges.map((e) => e.name)).toEqual([undefined, 'Side seam', 'Hem seam', 'Side seam']);
     const first = p.sub.mesh.positions; // the top row starts at the chosen side (x ~ 0, z ~ 10)
     expect(Math.hypot(first[0], first[2] - 10.3)).toBeLessThan(1.5);
   });
@@ -151,10 +151,55 @@ describe('two side seams', () => {
   });
   it('names the side seams and gives the two panels the same side seams', () => {
     const [a, b] = halves();
-    expect(a.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 2', 'Hem', 'Side seam 1']);
-    expect(b.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 1', 'Hem', 'Side seam 2']);
+    expect(a.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 2', 'Hem seam', 'Side seam 1']);
+    expect(b.edges.map((e) => e.name)).toEqual([undefined, 'Side seam 1', 'Hem seam', 'Side seam 2']);
     const length = (p: PanelFlat, name: string) => p.edges.find((e) => e.name === name)!.length;
     expect(length(a, 'Side seam 1')).toBeCloseTo(length(b, 'Side seam 1'), 6);
     expect(length(a, 'Side seam 2')).toBeCloseTo(length(b, 'Side seam 2'), 6);
+  });
+});
+
+describe('cloth simulation of a hanging panel', () => {
+  it('keeps the sewn row where it is, lets the rest hang, and does not stretch', async () => {
+    const { drapeGarment } = await import('./cloth');
+    const { SurfaceField } = await import('./bodyField');
+    const { flatten } = await import('./flatten');
+    const { uniformEase } = await import('./ease');
+    const path = graph.seamPath(body.positions, waist);
+    const h = buildHanging(body, path, { length: 30, flare: 30 });
+    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
+    const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
+    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
+    for (const v of pinned) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6);
+    expect(result.worstStrain).toBeLessThan(0.02);
+    for (let v = 0; v < result.mesh.positions.length / 3; v++) {
+      expect(result.mesh.positions[3 * v + 1]).toBeGreaterThanOrEqual(20 - 1e-9); // not through the floor
+      expect(Math.hypot(result.mesh.positions[3 * v], result.mesh.positions[3 * v + 2])).toBeGreaterThan(9.9); // not into the body
+    }
+  });
+});
+
+describe('cloth patterns for a hanging panel', () => {
+  it('keeps it hanging and pinned through the touch-up rounds', async () => {
+    const { clothPatterns } = await import('./cloth');
+    const { SurfaceField } = await import('./bodyField');
+    const { flatten } = await import('./flatten');
+    const { uniformEase } = await import('./ease');
+    const h = buildHanging(body, graph.seamPath(body.positions, waist), { length: 30, flare: 30 });
+    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
+    const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
+    const [r] = clothPatterns([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned }], new SurfaceField(body), { rounds: 3, iterations: 100, touchUp: 30, edgePasses: 16 });
+    for (const v of pinned) expect(r.mesh.positions[3 * v + 1]).toBeCloseTo(h.mesh.positions[3 * v + 1], 6);
+    expect(r.maxSeamError).toBe(0); // no border target to fall short of
+    expect(r.worstStrain).toBeLessThan(0.03);
+  });
+});
+
+describe('a skirt to the floor', () => {
+  it('works its length out from the seam height and the lowest point of the body', () => {
+    const { panels } = computePanels(body, graph, [waist], [{ seed: waist.points[0], horizontal: 0, vertical: 0, hang: { seam: 0, length: 5, flare: 0, toFloor: true } }]);
+    const p = flatOf(panels[0]);
+    expect(p.hangLength).toBeCloseTo(60 - 0 - 0.3, 1); // the tube runs from y = 0 to 100 and the seam is at 60
+    expect(p.edges[1].length).toBeCloseTo(59.7, 0);
   });
 });

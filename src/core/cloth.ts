@@ -24,6 +24,10 @@ export interface ClothOptions {
   edgePasses?: number;
   /** Downward pull per iteration (cm). Default 0, which is right for a piece held all round by its seams. */
   gravity?: number;
+  /** Downward pull per iteration on hanging pieces (cm). Default 0.05. */
+  hangGravity?: number;
+  /** Lowest height anything may reach (the floor, cm). Default: no floor. */
+  floor?: number;
 }
 
 export interface ClothResult {
@@ -47,6 +51,12 @@ export interface ClothPiece {
   flat: ArrayLike<number>;
   /** Garment vertex id of each vertex of the mesh. Panels sewn together share ids along their seam, so the seam is one line of vertices. Default: the mesh's own numbering. */
   vertexMap?: ArrayLike<number>;
+  /**
+   * A piece that hangs free (a skirt) rather than lying on the body: only its `pinned` vertices (numbered in this piece: the row sewn
+   * to the body) are held where they are, the rest fall under gravity, and nothing draws its border toward a target.
+   */
+  hanging?: boolean;
+  pinned?: ArrayLike<number>;
 }
 
 export interface GarmentOptions extends ClothOptions {
@@ -92,6 +102,9 @@ interface GarmentTopology {
   /** Per garment vertex: how strongly it is drawn to its target (1 on the outer border, `seamPull` on a seam). */
   pull: Float64Array;
   pulled: number[];
+  /** Garment vertices held exactly where they are (the top row of a skirt), and the free vertices of hanging pieces that gravity acts on. */
+  pinned: number[];
+  falling: number[];
 }
 
 function buildTopology(pieces: readonly ClothPiece[], bending: number, seamPull: number): GarmentTopology {
@@ -119,13 +132,21 @@ function buildTopology(pieces: readonly ClothPiece[], bending: number, seamPull:
   // The outer border of the garment (edges only one triangle has) is drawn to its targets; seams between pieces are not, or only a little.
   const pull = new Float64Array(n);
   for (const g of used) if (pieceCount[g] > 1) pull[g] = seamPull;
-  for (const e of edges) if (times.get(Math.min(e.a, e.b) * n + Math.max(e.a, e.b)) === 1) { pull[e.a] = 1; pull[e.b] = 1; }
+  for (const e of edges) if (!pieces[e.piece].hanging && times.get(Math.min(e.a, e.b) * n + Math.max(e.a, e.b)) === 1) { pull[e.a] = 1; pull[e.b] = 1; }
+  const pinned = new Set<number>();
+  const falling = new Set<number>();
+  pieces.forEach((p, k) => {
+    if (!p.hanging) return;
+    for (let v = 0; v < vertexCount(p.mesh); v++) falling.add(maps[k][v]);
+    for (const v of Array.from(p.pinned ?? [])) pinned.add(maps[k][v]);
+  });
+  for (const g of pinned) { falling.delete(g); pull[g] = 0; }
   return {
     maps, n, used,
     a: Int32Array.from(all, (e) => e.a), b: Int32Array.from(all, (e) => e.b),
     weight: Float64Array.from(all, (_, i) => (i < edges.length ? 1 : bending)),
     owner: Int32Array.from(all, (e) => e.piece), la: Int32Array.from(all, (e) => e.la), lb: Int32Array.from(all, (e) => e.lb),
-    edgeCount: edges.length, pull, pulled: used.filter((g) => pull[g] > 0),
+    edgeCount: edges.length, pull, pulled: used.filter((g) => pull[g] > 0), pinned: [...pinned], falling: [...falling],
   };
 }
 
@@ -166,12 +187,15 @@ function simulate(pieces: readonly ClothPiece[], top: GarmentTopology, body: Sur
 
 /** The simulation as a generator: it yields the number of iterations done every few iterations, so a caller can show progress and let a page repaint. */
 function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, body: SurfaceField, options: GarmentOptions): Generator<number, ClothResult[]> {
-  const { standoff = 0.05, iterations = 600, tolerance = 1e-4, borderWeight = 0.2, gravity = 0, edgePasses = 8 } = options;
-  const { maps, used, a: A, b: B, weight: W, owner, la, lb, edgeCount, pull, pulled } = top;
+  const { standoff = 0.05, iterations = 600, tolerance = 1e-4, borderWeight = 0.2, gravity = 0, edgePasses = 8, hangGravity = 0.05, floor } = options;
+  const { maps, used, a: A, b: B, weight: W, owner, la, lb, edgeCount, pull, pulled, pinned, falling } = top;
   const pos = garmentPositions(pieces);
   const targets = options.targets ?? Float64Array.from(pos);
   const L = restLengths(top, pieces);
   const m = A.length;
+  const free = new Float64Array(top.n).fill(1);
+  for (const g of pinned) free[g] = 0;
+  const pinAt = Float64Array.from(pinned.flatMap((g) => [pos[3 * g], pos[3 * g + 1], pos[3 * g + 2]])); // the sewn row stays where it starts
 
   const slack = new Float64Array(top.n); // how far a vertex can still travel before it could touch the body
   const before = new Float64Array(3 * top.n);
@@ -181,6 +205,7 @@ function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, bod
   for (; done < iterations; done++) {
     before.set(pos);
     if (gravity) for (const v of used) pos[3 * v + 1] -= gravity;
+    if (hangGravity) for (const v of falling) pos[3 * v + 1] -= hangGravity * ease; // eases off with the run, so the last iterations only settle the lengths
     // Stryker disable all: the hot loop (about 20 million projections per run); instrumented it is 30 times slower and made every mutant take minutes. The tests check its result: edge lengths.
     for (let pass = 0; pass < edgePasses; pass++) for (let i = 0; i < m; i++) {
       const a3 = 3 * A[i];
@@ -190,14 +215,18 @@ function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, bod
       const dz = pos[b3 + 2] - pos[a3 + 2];
       const l = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (l < 1e-12) continue;
-      const f = (W[i] * 0.5 * (l - L[i])) / l;
-      pos[a3] += f * dx; pos[a3 + 1] += f * dy; pos[a3 + 2] += f * dz;
-      pos[b3] -= f * dx; pos[b3 + 1] -= f * dy; pos[b3 + 2] -= f * dz;
+      const [wa, wb] = [free[A[i]], free[B[i]]]; // a pinned vertex does not move: the other one takes the whole correction
+      if (wa + wb === 0) continue;
+      const f = (W[i] * (l - L[i])) / (l * (wa + wb));
+      pos[a3] += wa * f * dx; pos[a3 + 1] += wa * f * dy; pos[a3 + 2] += wa * f * dz;
+      pos[b3] -= wb * f * dx; pos[b3 + 1] -= wb * f * dy; pos[b3 + 2] -= wb * f * dz;
     }
     // Stryker restore all
     // The pull on the border eases off as the run goes on, so what is left at the end is the border as close to its
     // targets as the cloth can get without stretching.
     for (const v of pulled) for (let k = 0; k < 3; k++) pos[3 * v + k] += borderWeight * ease * pull[v] * (targets[3 * v + k] - pos[3 * v + k]);
+    pinned.forEach((g, k) => { for (let c = 0; c < 3; c++) pos[3 * g + c] = pinAt[3 * k + c]; });
+    if (floor !== undefined) for (const v of falling) pos[3 * v + 1] = Math.max(pos[3 * v + 1], floor);
     let worst = 0;
     for (const v of used) {
       slack[v] -= Math.hypot(pos[3 * v] - before[3 * v], pos[3 * v + 1] - before[3 * v + 1], pos[3 * v + 2] - before[3 * v + 2]);
@@ -208,6 +237,7 @@ function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, bod
       }
       worst = Math.max(worst, Math.hypot(pos[3 * v] - before[3 * v], pos[3 * v + 1] - before[3 * v + 1], pos[3 * v + 2] - before[3 * v + 2]));
     }
+    pinned.forEach((g, k) => { for (let c = 0; c < 3; c++) pos[3 * g + c] = pinAt[3 * k + c]; }); // the body's push does not move the sewn row
     ease *= worst < tolerance ? 0.5 : decay;
     if (ease < 0.02) { done++; break; }
     if (done % PROGRESS_EVERY === PROGRESS_EVERY - 1) yield done + 1;
@@ -235,7 +265,7 @@ function* simulateSteps(pieces: readonly ClothPiece[], top: GarmentTopology, bod
     for (let v = 0; v < nv; v++) gap[v] = Math.max(0, body.closest([positions[3 * v], positions[3 * v + 1], positions[3 * v + 2]]).signed);
     const seamError = new Float64Array(nv);
     let maxSeamError = 0;
-    for (const loop of boundaryLoops(p.mesh)) for (const v of loop) {
+    if (!p.hanging) for (const loop of boundaryLoops(p.mesh)) for (const v of loop) { // a hanging piece has no target but its sewn row, which does not move
       const g = maps[k][v];
       seamError[v] = Math.hypot(positions[3 * v] - targets[3 * g], positions[3 * v + 1] - targets[3 * g + 1], positions[3 * v + 2] - targets[3 * g + 2]);
       maxSeamError = Math.max(maxSeamError, seamError[v]);
@@ -325,7 +355,7 @@ export function* clothPatternsSteps(pieces: readonly ClothPiece[], body: Surface
   yield { stage: 'flattening', round: 1, rounds, fraction: behind / total };
   let patterns = flatten0(cloths);
   for (let round = 2; round <= rounds; round++) {
-    const current = pieces.map((p, k) => ({ mesh: cloths[k].mesh, flat: patterns[k].uv, vertexMap: p.vertexMap }));
+    const current = pieces.map((p, k) => ({ ...p, mesh: cloths[k].mesh, flat: patterns[k].uv }));
     cloths = yield* settle(round, current, { ...config, iterations: touchUp, borderWeight: touchUpBorder });
     yield { stage: 'flattening', round, rounds, fraction: behind / total };
     patterns = flatten0(cloths);

@@ -2,7 +2,7 @@ import { SurfaceField } from './core/bodyField';
 import { type ClothPatternResult, type ClothPiece, type ClothProgress, clothPatternsSteps } from './core/cloth';
 import type { Mesh } from './core/mesh';
 
-export interface ClothRequest { body: Mesh; pieces: ClothPiece[]; targets: Float64Array }
+export interface ClothRequest { body: Mesh; pieces: ClothPiece[]; targets: Float64Array; floor?: number }
 export type ClothMessage =
   | { kind: 'progress'; progress: ClothProgress }
   | { kind: 'done'; results: ClothPatternResult[] }
@@ -12,8 +12,8 @@ const ctx = self as unknown as { onmessage: ((e: MessageEvent<ClothRequest>) => 
 
 ctx.onmessage = (e) => {
   try {
-    const { body, pieces, targets } = e.data;
-    const steps = clothPatternsSteps(pieces, new SurfaceField(body), { targets });
+    const { body, pieces, targets, floor } = e.data;
+    const steps = clothPatternsSteps(pieces, new SurfaceField(body), { targets, floor });
     let step = steps.next();
     while (!step.done) {
       ctx.postMessage({ kind: 'progress', progress: step.value });
