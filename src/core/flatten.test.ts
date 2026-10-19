@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { uniformEase } from './ease';
-import { FLATTEN_TOLERANCE, countFlips, flatten } from './flatten';
-import type { Mesh } from './mesh';
+import { FLATTEN_TOLERANCE, alignToUp, countFlips, flatten } from './flatten';
+import { type Mesh, meshEdges } from './mesh';
 
 /** Half cylinder (radius 14.3 -> half circumference ~45 cm), a developable surface. */
 function halfCylinder(rows = 7, cols = 9, radius = 14.3, height = 60): Mesh {
@@ -114,6 +114,13 @@ describe('flatten on a flat wall', () => {
     expect(b.uv[2 * 5] - b.uv[0]).toBeLessThan(-4.9); // seen from -z, +x on the body is to the left
     expect(a.uv[2 * 29 + 1] - a.uv[1]).toBeGreaterThan(3.9); // up on the body is up on the flat, either way
     expect(b.uv[2 * 29 + 1] - b.uv[1]).toBeGreaterThan(3.9);
+    // The starting layout alone (no refinement) already has the right way round and up, so the solve starts unfolded.
+    const [a0, b0] = [front, back].map((m) => flatten(m, { ease: uniformEase(0, 0), iterations: 0 }));
+    expect(a0.uv[2 * 5] - a0.uv[0]).toBeGreaterThan(4.9);
+    expect(b0.uv[2 * 5] - b0.uv[0]).toBeLessThan(-4.9);
+    expect(a0.uv[2 * 29 + 1] - a0.uv[1]).toBeGreaterThan(3.9);
+    expect(b0.uv[2 * 29 + 1] - b0.uv[1]).toBeGreaterThan(3.9);
+    expect(a0.flippedTriangles + b0.flippedTriangles).toBe(0);
   });
   it('keeps an isolated vertex (used by no triangle) out of the solve without failing', () => {
     const m = wall(3, 3);
@@ -302,5 +309,151 @@ describe('worstStrain (R7: a piece must lie flat)', () => {
     const curved = flatten(sphere, { ease: uniformEase(0, 0) });
     expect(Math.max(...curved.vertexStrain)).toBeGreaterThan(0.002);
     expect(Math.min(...curved.vertexStrain)).toBeLessThan(-0.002);
+  });
+});
+
+describe('alignToUp (the starting layout is turned so +y follows the 3D up axis)', () => {
+  const meshOf = (heights: number[]): Mesh => ({ positions: Float64Array.from(heights.flatMap((h) => [0, h, 0])), triangles: new Uint32Array(0) });
+
+  it('turns a layout whose height grows along +u so that it grows along +v, about the centroid', () => {
+    const uv = Float64Array.from([0, 0, 1, 0, 2, 0]);
+    alignToUp(meshOf([0, 1, 2]), uv, [0, 1, 0]);
+    expect(Array.from(uv).map((x) => Math.round(1e9 * x) / 1e9 + 0)).toEqual([0, -1, 0, 0, 0, 1]);
+  });
+
+  it('turns a layout whose height grows along -u the other way, and one that already points up stays', () => {
+    const down = Float64Array.from([0, 0, 1, 0, 2, 0]);
+    alignToUp(meshOf([2, 1, 0]), down, [0, 1, 0]);
+    expect(Array.from(down).map((x) => Math.round(1e9 * x) / 1e9 + 0)).toEqual([0, 1, 0, 0, 0, -1]);
+    const up = Float64Array.from([0, 0, 0, 1, 0, 2]);
+    alignToUp(meshOf([0, 1, 2]), up, [0, 1, 0]);
+    expect(Array.from(up).map((x) => Math.round(1e9 * x) / 1e9 + 0)).toEqual([0, -1, 0, 0, 0, 1]);
+  });
+
+  it('on a scattered layout: centres it, keeps every distance, and leaves height uncorrelated with u and rising with v', () => {
+    const pts = [[0.3, 1.2], [2.1, -0.4], [1.1, 2.6], [-1.5, 0.7], [0.9, -1.8], [2.8, 1.9]];
+    const heights = [3, 1, 4, 1.5, 9, 2.6];
+    const uv = Float64Array.from(pts.flat());
+    const before = Float64Array.from(uv);
+    alignToUp(meshOf(heights), uv, [0, 1, 0]);
+    const n = pts.length;
+    const mean = (k: number) => Array.from({ length: n }, (_, i) => uv[2 * i + k]).reduce((a, b) => a + b, 0) / n;
+    expect(mean(0)).toBeCloseTo(0, 9);
+    expect(mean(1)).toBeCloseTo(0, 9);
+    const mh = heights.reduce((a, b) => a + b, 0) / n;
+    const cov = (k: number) => heights.reduce((s, h, i) => s + (h - mh) * uv[2 * i + k], 0);
+    expect(cov(0)).toBeCloseTo(0, 9);
+    expect(cov(1)).toBeGreaterThan(1);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      expect(Math.hypot(uv[2 * i] - uv[2 * j], uv[2 * i + 1] - uv[2 * j + 1])).toBeCloseTo(Math.hypot(before[2 * i] - before[2 * j], before[2 * i + 1] - before[2 * j + 1]), 9);
+    }
+  });
+});
+
+describe('countFlips tolerance (a fold under 5% of an average triangle does not count)', () => {
+  const square: Mesh = { positions: new Float64Array(12), triangles: Uint32Array.from([0, 1, 2, 0, 2, 3]) };
+  it('counts the second triangle exactly when its fold is over 5% of the average triangle area', () => {
+    for (let k = 1; k <= 60; k++) {
+      const push = 0.005 * k; // vertex 3 pushed to (push, 1 - 2 * ... ) through the diagonal: the second triangle folds by about this much
+      const layout = Float64Array.from([0, 0, 1, 0, 1, 1, push, -push * 8]);
+      const area = (a: number, b: number, c: number) => (layout[2 * b] - layout[2 * a]) * (layout[2 * c + 1] - layout[2 * a + 1]) - (layout[2 * c] - layout[2 * a]) * (layout[2 * b + 1] - layout[2 * a + 1]);
+      const areas = [area(0, 1, 2), area(0, 2, 3)];
+      const tolerance = (0.05 * (Math.abs(areas[0]) + Math.abs(areas[1]))) / 2;
+      expect(countFlips(square, layout)).toBe(areas.filter((a) => a < -tolerance).length);
+    }
+  });
+  it('is 0 on a layout that merely has a very small triangle among large ones', () => {
+    const strip: Mesh = { positions: new Float64Array(15), triangles: Uint32Array.from([0, 1, 2, 0, 2, 3, 3, 2, 4]) };
+    expect(countFlips(strip, Float64Array.from([0, 0, 10, 0, 10, 10, 0, 10, 10, 10.0001]))).toBe(0);
+  });
+});
+
+describe('flatten starting layout and frame', () => {
+  const edgesOf = (m: Mesh) => {
+    const out: [number, number][] = [];
+    for (let t = 0; t < m.triangles.length; t += 3) for (let q = 0; q < 3; q++) out.push([m.triangles[t + q], m.triangles[t + ((q + 1) % 3)]]);
+    return out;
+  };
+  it('with no iterations, a flat wall starts at exactly the eased edge lengths: horizontal x (1 + h), vertical x (1 + v), diagonal by Pythagoras', () => {
+    const m = wall(5, 4);
+    const r = flatten(m, { ease: uniformEase(20, 10), iterations: 0 });
+    for (const [a, b] of edgesOf(m)) {
+      const [dx, dy] = [m.positions[3 * b] - m.positions[3 * a], m.positions[3 * b + 1] - m.positions[3 * a + 1]];
+      const want = Math.hypot(1.2 * dx, 1.1 * dy);
+      expect(Math.hypot(r.uv[2 * a] - r.uv[2 * b], r.uv[2 * a + 1] - r.uv[2 * b + 1])).toBeCloseTo(want, 6);
+    }
+  });
+  it('takes the horizontal direction from the surface even when it faces straight up (normal parallel to up): then horizontal is x', () => {
+    // A 5 x 4 floor in the xz plane, normal +y, which is also `up`.
+    const pos: number[] = [];
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 5; i++) pos.push(i, 0, -j);
+    const tris: number[] = [];
+    for (let j = 0; j + 1 < 4; j++) for (let i = 0; i + 1 < 5; i++) { const a = j * 5 + i; tris.push(a, a + 1, a + 6, a, a + 6, a + 5); }
+    const floor: Mesh = { positions: Float64Array.from(pos), triangles: Uint32Array.from(tris) };
+    const areaOf = (uv: Float64Array) => { let total = 0; for (let t = 0; t < floor.triangles.length; t += 3) { const [i, j, k] = [floor.triangles[t], floor.triangles[t + 1], floor.triangles[t + 2]]; total += Math.abs((uv[2 * j] - uv[2 * i]) * (uv[2 * k + 1] - uv[2 * i + 1]) - (uv[2 * k] - uv[2 * i]) * (uv[2 * j + 1] - uv[2 * i + 1])) / 2; } return total; };
+    const plain = areaOf(flatten(floor, { ease: uniformEase(0, 0) }).uv);
+    expect(plain).toBeCloseTo(12, 6); // 4 x 3
+    // The horizontal ease acts along x (the fallback direction), so the area grows by about 20%; with no usable horizontal it would not grow at all.
+    // (The starting layout's axes are not tied to x here, so the result is only approximately 1.2.)
+    const ratio = areaOf(flatten(floor, { ease: uniformEase(20, 0) }).uv) / plain;
+    expect(ratio).toBeGreaterThan(1.12);
+    expect(ratio).toBeLessThan(1.25);
+  });
+});
+
+describe('flatten figures are what they say, worked out independently on a curved patch', () => {
+  /** A square patch of a sphere with one vertex pulled almost onto its neighbour, so a few edges are very short. */
+  function patch(): Mesh {
+    const n = 4;
+    const [half, R] = [10, 25];
+    const positions: number[] = [];
+    for (let j = -n; j <= n; j++) for (let i = -n; i <= n; i++) {
+      const x = (i * half) / n;
+      const y = (j * half) / n;
+      positions.push(x, y, Math.sqrt(R * R - x * x - y * y));
+    }
+    const id = (i: number, j: number) => (j + n) * (2 * n + 1) + (i + n);
+    const tris: number[] = [];
+    for (let j = -n; j < n; j++) for (let i = -n; i < n; i++) tris.push(id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j), id(i + 1, j + 1), id(i, j + 1));
+    const [a, b] = [3 * id(0, 0), 3 * id(1, 0)];
+    for (let k = 0; k < 3; k++) positions[a + k] += 0.97 * (positions[b + k] - positions[a + k]); // vertex (0,0) almost on vertex (1,0)
+    return { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+  }
+  const m = patch();
+  const r = flatten(m, { ease: uniformEase(0, 0) });
+  const edges = meshEdges(m);
+  const target = edges.a.map((a, k) => Math.hypot(m.positions[3 * edges.b[k]] - m.positions[3 * a], m.positions[3 * edges.b[k] + 1] - m.positions[3 * a + 1], m.positions[3 * edges.b[k] + 2] - m.positions[3 * a + 2]));
+  const flatLen = edges.a.map((a, k) => Math.hypot(r.uv[2 * edges.b[k]] - r.uv[2 * a], r.uv[2 * edges.b[k] + 1] - r.uv[2 * a + 1]));
+  const strain = flatLen.map((d, k) => d / target[k] - 1);
+
+  it('rmsEdgeError is the length-weighted root mean square of the flat edge lengths against the targets', () => {
+    const se = flatLen.reduce((s, d, k) => s + (d - target[k]) ** 2, 0);
+    const tt = target.reduce((s, t) => s + t * t, 0);
+    expect(r.rmsEdgeError).toBeCloseTo(Math.sqrt(se / tt), 12);
+    expect(r.rmsEdgeError).toBeGreaterThan(1e-4); // a sphere does not flatten exactly
+  });
+
+  it('vertexStrain is the mean of the strains of the edges at each vertex', () => {
+    const sum = new Float64Array(m.positions.length / 3);
+    const count = new Float64Array(m.positions.length / 3);
+    edges.a.forEach((a, k) => { sum[a] += strain[k]; sum[edges.b[k]] += strain[k]; count[a]++; count[edges.b[k]]++; });
+    for (let v = 0; v < sum.length; v++) expect(r.vertexStrain[v]).toBeCloseTo(sum[v] / count[v], 12);
+  });
+
+  it('worstStrain is the 98th percentile of |strain| over the edges that are at least a quarter as long as the median edge', () => {
+    const sorted = [...target].sort((p, q) => p - q);
+    const typical = sorted[Math.floor(sorted.length / 2)];
+    expect(target.some((t) => t < 0.25 * typical)).toBe(true); // the pulled-in vertex gives some short edges
+    const counted = strain.filter((_, k) => target[k] >= 0.25 * typical).map(Math.abs).sort((p, q) => p - q);
+    expect(r.worstStrain).toBeCloseTo(counted[Math.floor(0.98 * counted.length)], 12);
+    const all = strain.map(Math.abs).sort((p, q) => p - q);
+    expect(Math.abs(r.worstStrain - all[all.length - 1])).toBeGreaterThan(1e-6); // not the worst of every edge
+  });
+
+  it('keeps the layout centred where the starting layout was, however the solve moves things', () => {
+    const start = flatten(m, { ease: uniformEase(0, 0), iterations: 0 });
+    const centre = (uv: Float64Array) => [0, 1].map((k) => Array.from({ length: uv.length / 2 }, (_, i) => uv[2 * i + k]).reduce((a, b) => a + b, 0) / (uv.length / 2));
+    expect(centre(r.uv)[0]).toBeCloseTo(centre(start.uv)[0], 9);
+    expect(centre(r.uv)[1]).toBeCloseTo(centre(start.uv)[1], 9);
   });
 });

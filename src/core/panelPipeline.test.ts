@@ -53,6 +53,26 @@ describe('computePanels', () => {
     expect(p.loop.length).toBeGreaterThanOrEqual(4);
   });
 
+  it('without draping the panel is cut straight from the skin: the draped mesh is the panel itself and nothing stands off', () => {
+    const r = computePanels(m, graph, [square], [panel(7, 7)]);
+    const p = flatOf(r.panels[0]);
+    expect(p.draped.positions).toEqual(p.sub.mesh.positions);
+    expect(p.gap).toHaveLength(p.sub.mesh.positions.length / 3);
+    expect(Math.max(...p.gap)).toBe(0);
+    expect(r.taut).toHaveLength(r.cut.positions.length);
+  });
+
+  it('with draping on, a flat body stays flat: the cloth rests on it, the seams are not moved, the pattern is the same size', () => {
+    const r = computePanels(m, graph, [square], [panel(7, 7)], true);
+    const p = flatOf(r.panels[0]);
+    expect(Math.max(...p.gap)).toBeLessThan(1e-3);
+    expect(p.draped.positions).toHaveLength(p.sub.mesh.positions.length);
+    for (let i = 2; i < p.draped.positions.length; i += 3) expect(Math.abs(p.draped.positions[i])).toBeLessThan(1e-3);
+    expect(outlineArea(p)).toBeCloseTo(36, 1);
+    expect(r.taut).toHaveLength(r.cut.positions.length);
+    expect(p.draped.triangles).toEqual(p.sub.mesh.triangles);
+  });
+
   it('applies the ease of each panel on its own, across (x) and down (y)', () => {
     const { panels } = computePanels(m, graph, [square], [panel(7, 7, 10, -5), panel(7, 7, 0, 0)]);
     const [eased, plain] = [flatOf(panels[0]), flatOf(panels[1])];

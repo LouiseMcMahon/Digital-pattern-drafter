@@ -368,3 +368,36 @@ describe('a seam that ends in the middle of another seam (junction inserted into
     expectWellFormed(cut.mesh);
   });
 });
+
+describe('pins: the control points that hold a seam when it is pulled taut', () => {
+  const at = (m: Mesh, cut: ReturnType<typeof cutMesh>, v: number): number[] => Array.from(cut.mesh.positions.slice(3 * v, 3 * v + 3));
+  const hasPinAt = (m: Mesh, cut: ReturnType<typeof cutMesh>, x: number, y: number) => [...cut.pins].some((v) => Math.hypot(at(m, cut, v)[0] - x, at(m, cut, v)[1] - y) < 1e-9);
+
+  it('are exactly the control points of an open seam, not the vertices between them', () => {
+    const m = grid(6, 6);
+    const cut = cutMesh(m, graphOf(m), [open(m, [[0.5, 3], [3, 3.4], [5.5, 3]])]);
+    expect(cut.pins.size).toBe(3);
+    for (const [x, y] of [[0.5, 3], [3, 3.4], [5.5, 3]]) expect(hasPinAt(m, cut, x, y)).toBe(true);
+  });
+  it('include every control point of a closed seam once, the closing point included', () => {
+    const m = grid(6, 6);
+    const pts: [number, number][] = [[2, 2], [4, 2], [4, 4], [2, 4]];
+    const cut = cutMesh(m, graphOf(m), [closed(m, pts)]);
+    expect(cut.pins.size).toBe(4);
+    for (const [x, y] of pts) expect(hasPinAt(m, cut, x, y)).toBe(true);
+  });
+  it('include the junction where one seam starts on another', () => {
+    const m = grid(6, 6);
+    const g = graphOf(m);
+    const horizontal: Seam = open(m, [[0, 3], [6, 3]]);
+    const hit = nearestOnSeams([g.seamLegs(m.positions, horizontal)], (p) => Math.hypot(p[0] - 2.2, p[1] - 3.4, p[2]), 1)!;
+    const junction = insertControlPoint(m, horizontal, hit.leg, hit.at);
+    const cut = cutMesh(m, g, [horizontal, { points: [junction, pointAt(m, hit.at[0], 6)], closed: false }]);
+    expect(cut.pins.size).toBe(4); // both ends of the horizontal seam, the junction, the end of the vertical seam
+    expect(hasPinAt(m, cut, hit.at[0], 3)).toBe(true);
+  });
+  it('are empty when there are no seams', () => {
+    const m = grid(3, 3);
+    expect(cutMesh(m, graphOf(m), []).pins.size).toBe(0);
+  });
+});

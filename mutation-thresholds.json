@@ -16,5 +16,8 @@
  "design": 92,
  "crossings": 82,
  "allowance": 90,
- "panelPipeline": 93
+ "panelPipeline": 93,
+ "bodyField": 75,
+ "drape": 80,
+ "cloth": 90
 }

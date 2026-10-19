@@ -4,13 +4,15 @@ import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyMod
 import { GUIDE_RINGS, centreLines, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
 import { offsetOutline } from './core/allowance';
+import { SurfaceField } from './core/bodyField';
+import { type ClothPatternResult, type ClothPiece, type ClothProgress, clothPatternsSteps } from './core/cloth';
 import { splitCrossings } from './core/crossings';
 import { type Design, type PanelSeed, cloneDesign, parseDesign, serializeDesign } from './core/design';
 import type { FitTargets } from './core/fit';
 import { FLATTEN_TOLERANCE } from './core/flatten';
 import { History } from './core/history';
 import { len, sub } from './core/mesh';
-import type { PanelsResult } from './core/panelPipeline';
+import type { PanelFlat, PanelsResult } from './core/panelPipeline';
 import { FIXTURES } from './core/fixtures';
 import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
@@ -58,6 +60,13 @@ controls.innerHTML = `
   <details open><summary>Panels</summary><div class="body">
     <div class="row"><button id="panel-pick" class="grow" title="Then click inside a closed set of seams">Make a panel</button><button id="panel-clear" class="danger">Clear</button></div>
     <div class="row"><label title="Cutting line drawn round each flat piece, in cm. 0 turns it off.">Seam allowance <input type="number" id="allowance" step="0.5" min="0" value="1" style="width:4em"> cm</label></div>
+    <label class="switch" title="Pull the seams taut and let each panel bridge hollows instead of following the skin. Off: panels are cut straight from the skin."><input type="checkbox" id="drape-on" checked><span>Drape panels over the body</span></label>
+    <div class="row">
+      <label class="switch" title="Lay the flat pattern over the body with every edge keeping its length (no stretch), so seams may fall short of their lines instead."><input type="checkbox" id="cloth-on"><span>Show cloth simulation</span></label>
+      <button id="cloth-run" title="Runs the simulation for every panel (several seconds each; the page is busy meanwhile). Moving a seam or changing ease makes the result out of date.">Simulate cloth (slow)</button>
+    </div>
+    <label class="row">Colour panels by <select id="panel-colour" class="grow"><option value="lift">lift off the body</option><option value="strain">strain (red/blue) or panel colour</option></select></label>
+    <div id="lift-key" class="hint"></div>
     <div id="panels"></div>
     <svg id="flat" width="312" height="1" style="display:none"></svg>
   </div></details>
@@ -78,7 +87,10 @@ const hoverEl = document.createElement('div');
 hoverEl.id = 'hover';
 const snapEl = document.createElement('div');
 snapEl.id = 'snap';
-threeEl.append(viewbar, snapEl);
+const busyEl = document.createElement('div');
+busyEl.className = 'busy';
+busyEl.innerHTML = '<div class="spinner"></div><div id="busy-text">Simulating cloth…</div><div class="bar"><div id="busy-bar"></div></div><div id="busy-detail"></div>';
+threeEl.append(viewbar, snapEl, busyEl);
 document.body.append(hoverEl);
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const status = $('status');
@@ -229,6 +241,12 @@ function show(params: BodyParams) {
 }
 
 const bodyMesh = () => ({ positions: shapePositions, triangles: body.faces });
+// Collision field for the cloth simulation, rebuilt only when the body changes.
+let fieldFor: { positions: Float64Array | Float32Array | number[]; field: SurfaceField } | undefined;
+const bodyField = () => {
+  if (!fieldFor || fieldFor.positions !== shapePositions) fieldFor = { positions: shapePositions, field: new SurfaceField(bodyMesh()) };
+  return fieldFor.field;
+};
 
 function drawSeams() {
   seamLegs = [];
@@ -357,6 +375,18 @@ function strainRgb(strain: number): [number, number, number] {
 }
 const strainCss = (strain: number) => `rgb(${strainRgb(strain).map((v) => Math.round(255 * v)).join(',')})`;
 
+// Cloth simulations take seconds, so they run only when asked for and are kept until the panel's shape changes.
+const clothCache = new Map<string, ClothPatternResult[]>();
+/** The panels as they are now, ready to simulate (set each time the panels are drawn); the button runs it. */
+let lastGarment: { key: string; pieces: ClothPiece[]; targets: Float64Array } | undefined;
+// A key for a set of arrays (two independent 32-bit hashes of each, and its length) so a stale simulation is never shown for a changed panel.
+const signature = (...arrays: ArrayLike<number>[]) => arrays.map((a) => { let h1 = 0; let h2 = 2166136261; for (let i = 0; i < a.length; i++) { const x = Math.round(a[i] * 1e4); h1 = (Math.imul(h1, 31) + x) | 0; h2 = Math.imul(h2 ^ x, 16777619); } return `${a.length}:${h1}:${h2}`; }).join('/');
+const clothOn = () => ($<HTMLInputElement>('cloth-on')).checked;
+const drapeOn = () => ($<HTMLInputElement>('drape-on')).checked;
+const colourBy = () => ($<HTMLSelectElement>('panel-colour')).value;
+/** Pale blue where the cloth rests on the body, through to deep orange at 1.2 cm or more off it. */
+const liftRgb = (gap: number): [number, number, number] => { const t = Math.min(1, gap / 1.2); return [0.75 + 0.2 * t, 0.88 - 0.58 * t, 0.95 - 0.9 * t]; };
+
 const panelsWorker = new Worker(new URL('./panels.worker.ts', import.meta.url), { type: 'module' });
 let panelsRequest = 0; // the newest request: older answers are dropped
 const panelsWaiting = new Map<number, () => void>();
@@ -391,7 +421,7 @@ function refreshPanels(): Promise<void> {
   $('panels').style.opacity = '0.5'; // the old pieces stay until the new ones are ready
   return new Promise((resolve) => {
     panelsWaiting.set(id, resolve);
-    panelsWorker.postMessage({ id, positions: shapePositions, triangles: body.faces, seams, panels } satisfies PanelsRequest);
+    panelsWorker.postMessage({ id, positions: shapePositions, triangles: body.faces, seams, panels, drapeOn: drapeOn() } satisfies PanelsRequest);
   });
 }
 const changePanels = () => { saveLocal(); return refreshPanels(); };
@@ -410,34 +440,49 @@ function renderPanels(result: PanelsResult) {
   // Which panels each seam is a side of: a seam with two panels is a shared seam line (sewn together).
   const panelsOfSeam = new Map<number, number[]>();
   result.panels.forEach((d, i) => { if (d.error === undefined) d.edges.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }); });
+  // The cloth simulation works on all the flattened panels together, sewn at the seams they share.
+  const flattened = result.panels.map((_, i) => i).filter((i) => result.panels[i].error === undefined);
+  const flatPanel = (i: number) => result.panels[i] as PanelFlat;
+  const clothKey = flattened.map((i) => signature(flatPanel(i).draped.positions, flatPanel(i).flat.uv, flatPanel(i).sub.vertexMap)).join('|');
+  lastGarment = flattened.length ? { key: clothKey, pieces: flattened.map((i) => ({ mesh: flatPanel(i).draped, flat: flatPanel(i).flat.uv, vertexMap: flatPanel(i).sub.vertexMap })), targets: result.taut } : undefined;
+  const garment = clothOn() ? clothCache.get(clothKey) : undefined; // simulations are run by the button, not here
   result.panels.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
     const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
     if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
     const flat = d.flat;
-    const tooCurved = flat.worstStrain > FLATTEN_TOLERANCE;
+    // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
+    // pattern length. What is left of stretch is real; where the patterns cannot reach the seam lines without stretching, the seam falls short instead.
+    const cloth = garment?.[flattened.indexOf(i)];
+    const clothStale = clothOn() && !cloth;
+    const shape = cloth ? cloth.mesh : d.draped;
+    const gap = cloth ? cloth.gap : d.gap;
+    const strain = cloth ?? flat; // the stretch between the 3D shape shown and the pattern drawn
+    const pat = cloth ?? flat; // the pattern: the cloth's own flattening when simulated
+    const tooCurved = strain.worstStrain > FLATTEN_TOLERANCE;
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(result.cut.positions), 3));
-    g.setIndex(new THREE.BufferAttribute(Uint32Array.from(d.triangles.flatMap((t) => [0, 1, 2].map((k) => result.cut.triangles[3 * t + k]))), 1));
-    if (tooCurved) { // colour the piece by how much it would have to stretch (red) or squeeze (blue) to lie flat
-      const colors = new Float32Array(result.cut.positions.length);
-      d.sub.vertexMap.forEach((cutVertex, subVertex) => { colors.set(strainRgb(flat.vertexStrain[subVertex]), 3 * cutVertex); });
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(shape.positions), 3));
+    g.setIndex(new THREE.BufferAttribute(shape.triangles, 1));
+    const byLift = colourBy() === 'lift';
+    if (byLift || tooCurved) { // colour the piece by lift off the body, or by how much it would have to stretch (red) or squeeze (blue) to lie flat
+      const colors = new Float32Array(d.draped.positions.length);
+      d.sub.vertexMap.forEach((_, subVertex) => { colors.set(byLift ? liftRgb(gap[subVertex]) : strainRgb(strain.vertexStrain[subVertex]), 3 * subVertex); });
       g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     }
-    panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: tooCurved ? 0xffffff : color, vertexColors: tooCurved, transparent: true, opacity: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
+    panelGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: byLift || tooCurved ? 0xffffff : color, vertexColors: byLift || tooCurved, transparent: true, opacity: byLift ? 0.9 : 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide })));
     const ox = x; // where this panel starts in the flat view
-    const xs = d.loop.map((v) => flat.uv[2 * v]);
-    const ys = d.loop.map((v) => flat.uv[2 * v + 1]);
+    const xs = d.loop.map((v) => pat.uv[2 * v]);
+    const ys = d.loop.map((v) => pat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
-    outlines.push(d.loop.map((v) => [flat.uv[2 * v], flat.uv[2 * v + 1]] as [number, number]));
+    outlines.push(d.loop.map((v) => [pat.uv[2 * v], pat.uv[2 * v + 1]] as [number, number]));
     // Flat piece drawn in the page's units (cm), y pointing down, room left all round for the seam allowance.
-    const place = (v: number): [number, number] => [flat.uv[2 * v] - x0 + ox + allowance, y1 - flat.uv[2 * v + 1] + allowance];
+    const place = (v: number): [number, number] => [pat.uv[2 * v] - x0 + ox + allowance, y1 - pat.uv[2 * v + 1] + allowance];
     const at = (v: number) => place(v).map((c) => c.toFixed(2)).join(',');
     if (tooCurved) { // the flat piece too, coloured by stretch, with a red outline: this one is not a valid pattern piece
       const tri = d.sub.mesh.triangles;
       for (let t = 0; t < tri.length; t += 3) {
-        const mean = (flat.vertexStrain[tri[t]] + flat.vertexStrain[tri[t + 1]] + flat.vertexStrain[tri[t + 2]]) / 3;
+        const mean = (strain.vertexStrain[tri[t]] + strain.vertexStrain[tri[t + 1]] + strain.vertexStrain[tri[t + 2]]) / 3;
         shapes.push(`<path fill="${strainCss(mean)}" stroke="${strainCss(mean)}" stroke-width="0.05" d="M${at(tri[t])}L${at(tri[t + 1])}L${at(tri[t + 2])}Z"/>`);
       }
       shapes.push(`<path fill="none" stroke="#c00" stroke-width="0.5" stroke-dasharray="1.2 0.8" d="M${d.loop.map(at).join('L')}Z"/>`);
@@ -448,19 +493,26 @@ function renderPanels(result: PanelsResult) {
     x += x1 - x0 + 4 + 2 * allowance;
     top = Math.max(top, y1 - y0 + 2 * allowance);
     const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
+    const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(pat.uv[2 * a] - pat.uv[2 * b], pat.uv[2 * a + 1] - pat.uv[2 * b + 1]); }, 0);
+    const drapedLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(...[0, 1, 2].map((c) => shape.positions[3 * a + c] - shape.positions[3 * b + c]) as [number, number, number]); }, 0);
     const sides: string[] = [];
     for (const e of d.edges) {
       if (e.seam === undefined) continue;
       const others = (panelsOfSeam.get(e.seam) ?? []).filter((j) => j !== i).map((j) => j + 1);
-      sides.push(`Seam ${e.seam + 1}: ${e.length.toFixed(1)} cm (flat ${e.flatLength.toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
+      sides.push(`Seam ${e.seam + 1}: ${drapedLength(e.vertices).toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
       const [lx, ly] = place(subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!);
-      labels.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="2.2" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.6" paint-order="stroke">${e.seam + 1}: ${e.flatLength.toFixed(1)}</text>`);
+      labels.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="2.2" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.6" paint-order="stroke">${e.seam + 1}: ${flatLength(e.vertices).toFixed(1)}</text>`);
     }
     const verdict = tooCurved
-      ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * flat.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
-      : `<span class="ok">Lies flat (worst stretch ${(100 * flat.worstStrain).toFixed(1)}%).</span>`;
-    const warn = flat.flippedTriangles > 0 ? ` <span class="bad">${flat.flippedTriangles} flipped triangles</span>` : '';
-    rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${warn}</span>${verdict}<span class="sides">${sides.join('<br>')}</span></div>`);
+      ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * strain.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
+      : `<span class="ok">Lies flat (worst stretch ${(100 * strain.worstStrain).toFixed(1)}%).</span>`;
+    // A piece that is hopelessly out of shape (tens of percent, or many flipped triangles) is nearly always an area that
+    // runs on into an arm, leg or hand: a click near the armhole lands on the arm, which is in front of the body's side.
+    const limbHint = strain.worstStrain > 0.3 || pat.flippedTriangles > 0.02 * (d.sub.mesh.triangles.length / 3)
+      ? '<span class="bad"><b>This area probably runs on into an arm or leg.</b> If you meant a piece of the body, remove this panel and click on the torso away from the arm (or close the seams so the area is just the piece you want).</span>'
+      : '';
+    const warn = pat.flippedTriangles > 0 ? ` <span class="bad">${pat.flippedTriangles} flipped triangles</span>` : '';
+    rows.push(`<div class="item">${ease}<span class="muted">${(x1 - x0).toFixed(1)} x ${(y1 - y0).toFixed(1)} cm flat, ${d.size.toFixed(0)} cm² on the body; ${clothStale ? '<span class="bad">Cloth simulation is out of date or not run yet: click "Simulate cloth". Showing the drape.</span> ' : ''}${cloth ? `cloth simulation: up to ${Math.max(...gap).toFixed(1)} cm off the body, seams fall up to ${cloth.maxSeamError.toFixed(1)} cm short of their lines` : drapeOn() ? `draped up to ${Math.max(...gap).toFixed(1)} cm off the body` : 'not draped'};${warn}</span>${verdict}${limbHint}<span class="sides">${sides.join('<br>')}</span></div>`);
   });
   $('panels').innerHTML = rows.join('');
   svg.style.display = shapes.length ? 'block' : 'none';
@@ -484,6 +536,57 @@ $('panel-pick').onclick = () => {
   $('panel-pick').textContent = pickingPanel ? 'Click inside the seams… (cancel)' : 'Make a panel';
   renderer.domElement.style.cursor = pickingPanel ? 'crosshair' : '';
 };
+$('drape-on').onchange = () => refreshPanels();
+$('cloth-on').onchange = () => refreshPanels();
+/** What the overlay says for each step of the simulation, in plain words. */
+function describeProgress(p: ClothProgress): { text: string; detail: string } {
+  const percent = Math.round(100 * p.fraction);
+  if (p.stage === 'flattening') return { text: `Flattening the cloth into patterns (round ${p.round} of ${p.rounds})`, detail: `Opening the draped cloth out flat to see what shape each piece should be cut. ${percent}% done.` };
+  return p.round === 1
+    ? { text: 'Laying the panels over the body', detail: `Every edge keeps the length it has on the flat pattern, the cloth cannot go inside the body, and panels sewn together are pulled on at their seams. ${percent}% done.` }
+    : { text: `Fitting the patterns to the cloth (round ${p.round} of ${p.rounds})`, detail: `Settling the cloth again against its new patterns so sewn panels agree along their seams. ${percent}% done.` };
+}
+
+// Paint, then carry on: lets the overlay and its progress show between steps of the simulation.
+const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+
+$('cloth-run').onclick = async () => {
+  const button = $('cloth-run');
+  const garment = lastGarment;
+  if (panels.length === 0 || !garment) { // nothing to simulate: say so rather than flash the overlay
+    button.textContent = 'Make a panel first';
+    setTimeout(() => { button.textContent = 'Simulate cloth (slow)'; }, 2000);
+    return;
+  }
+  button.textContent = 'Simulating…';
+  $('busy-text').textContent = `Simulating cloth for ${garment.pieces.length} panel${garment.pieces.length === 1 ? '' : 's'}…`;
+  $('busy-detail').textContent = 'Starting.';
+  $('busy-bar').style.width = '0%';
+  busyEl.classList.add('on');
+  try {
+    await nextFrame();
+    // The simulation yields every few iterations: show where it is, and let the page repaint, then go on.
+    const steps = clothPatternsSteps(garment.pieces, bodyField(), { targets: garment.targets });
+    let step = steps.next();
+    while (!step.done) {
+      const { text, detail } = describeProgress(step.value);
+      $('busy-text').textContent = text;
+      $('busy-detail').textContent = detail;
+      $('busy-bar').style.width = `${Math.round(100 * step.value.fraction)}%`;
+      await nextFrame();
+      step = steps.next();
+    }
+    if (clothCache.size >= 10) clothCache.clear();
+    clothCache.set(garment.key, step.value);
+    $<HTMLInputElement>('cloth-on').checked = true;
+    refreshPanels();
+  } finally {
+    button.textContent = 'Simulate cloth (slow)';
+    busyEl.classList.remove('on');
+  }
+};
+$('panel-colour').onchange = () => { $('lift-key').textContent = colourBy() === 'lift' ? 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).' : ''; refreshPanels(); };
+$('lift-key').textContent = 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).';
 $('panel-clear').onclick = () => { if (!panels.length) return; checkpoint(); panels = []; void changePanels(); };
 
 function drawLandmarks() {

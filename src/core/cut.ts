@@ -19,6 +19,8 @@ export interface CutMesh {
   seamEdges: Set<number>;
   /** For each seam edge, the seams (indices into the list given to cutMesh) it lies on: one, or more where seams run together. */
   seamsOfEdge: Map<number, number[]>;
+  /** Vertices where a seam has a control point (including where seams meet): they stay put when the seams are pulled taut. */
+  pins: Set<number>;
   /** The vertex a seam point became (for tests and display). */
   vertexCount: number;
 }
@@ -105,6 +107,7 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
   // Each seam is a chain of nodes; every consecutive pair is a segment inside one triangle (or along one edge).
   const chords = new Map<number, [number, number][]>(); // original triangle -> segments across or into it
   const alongEdge: { edge: number; u: number; w: number; seam: number }[] = [];
+  const pins = new Set<number>();
   const chordSeams = new Map<string, number[]>(); // chord (smaller vertex:larger vertex) -> seams
   const segment = (u: Resolved, w: Resolved, seam: number) => {
     if (u.vertex === w.vertex) return;
@@ -124,11 +127,14 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
     if (seam.points.length < 2) return;
     const pts = seam.closed && seam.points.length > 2 ? [...seam.points, seam.points[0]] : seam.points;
     const nodes: Resolved[] = [];
+    const legStarts: number[] = [];
     for (let i = 0; i + 1 < pts.length; i++) {
       const leg = graph.pathNodes(m.positions, pts[i], pts[i + 1]).map(resolve);
+      legStarts.push(i === 0 ? 0 : nodes.length - 1);
       nodes.push(...(i === 0 ? leg : leg.slice(1)));
     }
     for (let i = 0; i + 1 < nodes.length; i++) segment(nodes[i], nodes[i + 1], seamIndex);
+    for (const k of [0, ...legStarts.slice(1), nodes.length - 1]) if (nodes[k]) pins.add(nodes[k].vertex);
   });
 
   // The chain of vertices along each original edge, from the smaller vertex id to the larger.
@@ -180,7 +186,7 @@ export function cutMesh(m: Mesh, graph: SurfaceGraph, seams: readonly Seam[]): C
     if (!list.includes(seam)) list.push(seam);
     seamsOfEdge.set(key, list);
   }
-  return { mesh: { positions: Float64Array.from(pos), triangles: Uint32Array.from(triangles) }, parent, seamEdges, seamsOfEdge, vertexCount: total };
+  return { mesh: { positions: Float64Array.from(pos), triangles: Uint32Array.from(triangles) }, parent, seamEdges, seamsOfEdge, pins, vertexCount: total };
 }
 
 /**

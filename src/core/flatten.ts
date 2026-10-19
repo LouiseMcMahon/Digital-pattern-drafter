@@ -1,4 +1,4 @@
-import { type Mesh, type Vec3, cross, dot, getVertex, len, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
+import { type Mesh, type Vec3, cross, dot, getVertex, len, meshEdges, normalize, sub, triangleCount, vertexCount, vertexNormals } from './mesh';
 import { lscm } from './lscm';
 import { type EaseField, scalesAt, sortedField } from './ease';
 
@@ -47,14 +47,9 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   const normals = vertexNormals(mesh);
 
   // Unique edges with eased target lengths.
-  const seen = new Set<number>();
-  const ea: number[] = [];
-  const eb: number[] = [];
-  const target: number[] = [];
-  const addEdge = (a: number, b: number) => {
-    const key = a < b ? a * n + b : b * n + a;
-    if (seen.has(key)) return;
-    seen.add(key);
+  const { a: ea, b: eb } = meshEdges(mesh);
+  const target = ea.map((a, i) => {
+    const b = eb[i];
     const pa = getVertex(mesh, a);
     const pb = getVertex(mesh, b);
     const e = sub(pb, pa);
@@ -65,16 +60,8 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
     const rest = Math.max(0, dot(e, e) - dh * dh - dv * dv);
     const ymid = (pa[1] + pb[1]) / 2;
     const s = scalesAt(opts.ease, ymid);
-    ea.push(a);
-    eb.push(b);
-    target.push(Math.max(1e-9, Math.sqrt((s.horizontal * dh) ** 2 + (s.vertical * dv) ** 2 + rest))); // a zero-length edge must not divide by zero below
-  };
-  for (let t = 0; t < triangleCount(mesh); t++) {
-    const [a, b, c] = [mesh.triangles[3 * t], mesh.triangles[3 * t + 1], mesh.triangles[3 * t + 2]];
-    addEdge(a, b);
-    addEdge(b, c);
-    addEdge(c, a);
-  }
+    return Math.max(1e-9, Math.sqrt((s.horizontal * dh) ** 2 + (s.vertical * dv) ** 2 + rest)); // a zero-length edge must not divide by zero below
+  });
 
   // Initial layout: conformal unwrap, rotated so +y follows the body's up axis,
   // mirrored if needed so it reads as seen from outside, scaled to the target edge lengths.
@@ -263,7 +250,7 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
 }
 
 /** Rotate the layout so +y follows the 3D up axis (centred on its centroid). */
-function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
+export function alignToUp(mesh: Mesh, uv: Float64Array, up: Vec3) {
   const n = vertexCount(mesh);
   let mu = 0, mv = 0, mh = 0;
   const hgt = (i: number) => dot(getVertex(mesh, i), up);
