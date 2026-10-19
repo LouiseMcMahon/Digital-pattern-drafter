@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
 import { GUIDE_RINGS, centreLines, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
-import { SurfaceField } from './core/bodyField';
-import { type ClothPatternResult, type ClothPiece, type ClothProgress, clothPatternsSteps } from './core/cloth';
+import { type ClothPatternResult, type ClothPiece, type ClothProgress } from './core/cloth';
+import type { ClothMessage, ClothRequest } from './cloth.worker';
 import { drape, drapeSeams } from './core/drape';
 import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
 import { uniformEase } from './core/ease';
@@ -231,13 +231,6 @@ function show(params: BodyParams) {
 }
 
 const bodyMesh = () => ({ positions: shapePositions, triangles: body.faces });
-// Collision field for the cloth simulation, rebuilt only when the body changes.
-let fieldFor: { positions: Float64Array | Float32Array | number[]; field: SurfaceField } | undefined;
-const bodyField = () => {
-  if (!fieldFor || fieldFor.positions !== shapePositions) fieldFor = { positions: shapePositions, field: new SurfaceField(bodyMesh()) };
-  return fieldFor.field;
-};
-
 function drawSeams() {
   seamLegs = [];
   for (const c of [...seamGroup.children]) { seamGroup.remove(c); disposeTree(c); }
@@ -472,6 +465,26 @@ function describeProgress(p: ClothProgress): { text: string; detail: string } {
 }
 
 // Paint, then carry on: lets the overlay and its progress show between steps of the simulation.
+function runClothInWorker(garment: NonNullable<typeof lastGarment>): Promise<ClothPatternResult[]> {
+  return new Promise((resolve, reject) => {
+    const w = new Worker(new URL('./cloth.worker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = (e: MessageEvent<ClothMessage>) => {
+      const m = e.data;
+      if (m.kind === 'progress') {
+        const { text, detail } = describeProgress(m.progress);
+        $('busy-text').textContent = text;
+        $('busy-detail').textContent = detail;
+        $('busy-bar').style.width = `${Math.round(100 * m.progress.fraction)}%`;
+        return;
+      }
+      w.terminate();
+      if (m.kind === 'done') resolve(m.results); else reject(new Error(m.error));
+    };
+    w.onerror = (e) => { w.terminate(); reject(new Error(e.message)); };
+    w.postMessage({ body: bodyMesh(), pieces: garment.pieces, targets: garment.targets } satisfies ClothRequest);
+  });
+}
+
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 
 $('cloth-run').onclick = async () => {
@@ -489,19 +502,10 @@ $('cloth-run').onclick = async () => {
   busyEl.classList.add('on');
   try {
     await nextFrame();
-    // The simulation yields every few iterations: show where it is, and let the page repaint, then go on.
-    const steps = clothPatternsSteps(garment.pieces, bodyField(), { targets: garment.targets });
-    let step = steps.next();
-    while (!step.done) {
-      const { text, detail } = describeProgress(step.value);
-      $('busy-text').textContent = text;
-      $('busy-detail').textContent = detail;
-      $('busy-bar').style.width = `${Math.round(100 * step.value.fraction)}%`;
-      await nextFrame();
-      step = steps.next();
-    }
+    // The simulation runs in a worker, which reports where it is every few iterations.
+    const results = await runClothInWorker(garment);
     if (clothCache.size >= 10) clothCache.clear();
-    clothCache.set(garment.key, step.value);
+    clothCache.set(garment.key, results);
     $<HTMLInputElement>('cloth-on').checked = true;
     refreshPanels();
   } finally {

@@ -132,20 +132,41 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   const BORDER_END = opts.borderWeight ?? 1000; // against cotangent weights of about 1
   let BORDER_WEIGHT = BORDER_END;
   const tri = mesh.triangles;
+  // The system matrix as a weighted graph Laplacian over the unique edges: each edge's weight is the sum of the
+  // cotangents on either side of it, plus the border weight if it is on the border. Built once; only the border part
+  // changes between iterations.
+  const edgeIndex = new Map<number, number>();
+  for (let k = 0; k < ea.length; k++) edgeIndex.set(ea[k] < eb[k] ? ea[k] * n + eb[k] : eb[k] * n + ea[k], k);
+  const ne = ea.length;
+  const EA = Int32Array.from(ea);
+  const EB = Int32Array.from(eb);
+  const cotWeight = new Float64Array(ne);
+  for (let t = 0; t < nt; t++) for (let q = 0; q < 3; q++) {
+    const [a, b] = [tri[3 * t + ((q + 1) % 3)], tri[3 * t + ((q + 2) % 3)]];
+    cotWeight[edgeIndex.get(a < b ? a * n + b : b * n + a)!] += cot[3 * t + ((q + 1) % 3)];
+  }
+  const isBorder = new Uint8Array(ne);
+  for (const e of border) isBorder[edgeIndex.get(e.a < e.b ? e.a * n + e.b : e.b * n + e.a)!] = 1;
+  const weight = new Float64Array(ne);
+  const diag = new Float64Array(n);
+  const setBorderWeight = (bw: number) => {
+    BORDER_WEIGHT = bw;
+    diag.fill(0);
+    for (let k = 0; k < ne; k++) {
+      const w = cotWeight[k] + (isBorder[k] ? bw : 0);
+      weight[k] = w;
+      diag[EA[k]] += w;
+      diag[EB[k]] += w;
+    }
+  };
   const applyL = (v: Float64Array, out: Float64Array) => {
     out.fill(0);
-    for (let t = 0; t < nt; t++) {
-      for (let q = 0; q < 3; q++) {
-        const [a, b] = [tri[3 * t + ((q + 1) % 3)], tri[3 * t + ((q + 2) % 3)]];
-        const f = cot[3 * t + ((q + 1) % 3)] * (v[a] - v[b]);
-        out[a] += f;
-        out[b] -= f;
-      }
-    }
-    for (const e of border) {
-      const f = BORDER_WEIGHT * (v[e.a] - v[e.b]);
-      out[e.a] += f;
-      out[e.b] -= f;
+    for (let k = 0; k < ne; k++) {
+      const a = EA[k];
+      const b = EB[k];
+      const f = weight[k] * (v[a] - v[b]);
+      out[a] += f;
+      out[b] -= f;
     }
   };
   const iterations = opts.iterations ?? 40;
@@ -154,29 +175,49 @@ export function flatten(mesh: Mesh, options: FlattenOptions): FlattenResult {
   const Y = new Float64Array(n);
   const bx = new Float64Array(n);
   const by = new Float64Array(n);
+  const r = new Float64Array(n);
+  const z = new Float64Array(n);
+  const p = new Float64Array(n);
+  const Ap = new Float64Array(n);
+  // Jacobi-preconditioned conjugate gradients, starting from the current layout.
   const solve = (x: Float64Array, rhs: Float64Array) => {
-    const r = new Float64Array(n);
-    const p = new Float64Array(n);
-    const Ap = new Float64Array(n);
     applyL(x, Ap);
-    for (let i = 0; i < n; i++) { r[i] = rhs[i] - Ap[i]; p[i] = r[i]; }
-    let rs = r.reduce((s2, v) => s2 + v * v, 0);
-    const stop = 1e-10 * (rhs.reduce((s2, v) => s2 + v * v, 0) + 1e-30);
-    for (let it = 0; it < 100 && rs > stop; it++) {
+    let rr = 0;
+    let bb = 0;
+    let rz = 0;
+    for (let i = 0; i < n; i++) {
+      r[i] = rhs[i] - Ap[i];
+      z[i] = r[i] / (diag[i] || 1);
+      p[i] = z[i];
+      rz += r[i] * z[i];
+      rr += r[i] * r[i];
+      bb += rhs[i] * rhs[i];
+    }
+    const stop = 1e-10 * (bb + 1e-30);
+    for (let it = 0; it < 100 && rr > stop; it++) {
       applyL(p, Ap);
-      const pAp = p.reduce((s2, v, i) => s2 + v * Ap[i], 0);
+      let pAp = 0;
+      for (let i = 0; i < n; i++) pAp += p[i] * Ap[i];
       if (!(pAp > 0)) break;
-      const alpha = rs / pAp;
-      let rsNew = 0;
-      for (let i = 0; i < n; i++) { x[i] += alpha * p[i]; r[i] -= alpha * Ap[i]; rsNew += r[i] * r[i]; }
-      for (let i = 0; i < n; i++) p[i] = r[i] + (rsNew / rs) * p[i];
-      rs = rsNew;
+      const alpha = rz / pAp;
+      let rzNew = 0;
+      rr = 0;
+      for (let i = 0; i < n; i++) {
+        x[i] += alpha * p[i];
+        r[i] -= alpha * Ap[i];
+        z[i] = r[i] / (diag[i] || 1);
+        rzNew += r[i] * z[i];
+        rr += r[i] * r[i];
+      }
+      const beta = rzNew / rz;
+      rz = rzNew;
+      for (let i = 0; i < n; i++) p[i] = z[i] + beta * p[i];
     }
   };
   for (let i = 0; i < n; i++) { X[i] = uv[2 * i]; Y[i] = uv[2 * i + 1]; }
   for (let it = 0; it < iterations; it++) {
     // Start with the border held loosely and tighten it step by step, so the layout adapts without folding over.
-    BORDER_WEIGHT = BORDER_END * Math.pow(0.03, Math.max(0, 1 - it / Math.max(1, iterations * 0.6)));
+    setBorderWeight(BORDER_END * Math.pow(0.03, Math.max(0, 1 - it / Math.max(1, iterations * 0.6))));
     bx.fill(0);
     by.fill(0);
     for (let t = 0; t < nt; t++) {
