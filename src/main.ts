@@ -3,18 +3,21 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { type BodyModel, type BodyParams, loadBodyFromUrl } from './core/bodyModel';
 import { GUIDE_RINGS, centreLines, ringLandmarks } from './core/guides';
 import { mirrorSeam } from './core/mirror';
+import { offsetOutline } from './core/allowance';
 import { SurfaceField } from './core/bodyField';
 import { type ClothPatternResult, type ClothPiece, type ClothProgress, clothPatternsSteps } from './core/cloth';
-import { drape, drapeSeams } from './core/drape';
-import { area, cutMesh, locateInCut, panelEdges, regionFrom } from './core/cut';
-import { uniformEase } from './core/ease';
+import { splitCrossings } from './core/crossings';
+import { type Design, type PanelSeed, cloneDesign, parseDesign, serializeDesign } from './core/design';
 import type { FitTargets } from './core/fit';
-import { FLATTEN_TOLERANCE, flatten } from './core/flatten';
-import { boundaryLoops, extractSubmesh, len, sub } from './core/mesh';
+import { FLATTEN_TOLERANCE } from './core/flatten';
+import { History } from './core/history';
+import { len, sub } from './core/mesh';
+import type { PanelFlat, PanelsResult } from './core/panelPipeline';
 import { FIXTURES } from './core/fixtures';
 import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
 import type { FitRequest, FitResponse } from './fit.worker';
+import type { PanelsRequest, PanelsResponse } from './panels.worker';
 
 const controls = document.getElementById('controls')!;
 const threeEl = document.getElementById('three')!;
@@ -40,16 +43,23 @@ controls.innerHTML = `
   <details open><summary>Seams</summary><div class="body">
     <label class="switch" title="Click the body to add points, drag a point to move it, shift-click a point to delete it. Click the first point to close the seam. Points snap to landmarks (green), the bust, waist and hip lines (teal) and other seams; a label shows what a click will snap to."><input type="checkbox" id="draw"><span><b>Draw seams</b><br><span class="hint">Click to add points · drag to move · shift-click to delete · click the first point to close</span></span></label>
     <div class="row">
-      <button id="seam-undo" title="Remove the last point">Undo</button>
+      <button id="seam-undo" title="Undo the last change to the seams or panels (Ctrl+Z)">Undo</button>
+      <button id="seam-redo" title="Redo (Ctrl+Shift+Z or Ctrl+Y)">Redo</button>
       <button id="seam-close" title="Join the last point back to the first">Close</button>
       <button id="seam-new" title="Finish this seam and start another">New seam</button>
       <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror</button>
       <button id="seam-clear" class="danger">Clear</button>
     </div>
+    <div class="row">
+      <button id="design-save" class="grow" title="Save the seams and panels to a file">Save seams…</button>
+      <button id="design-load" class="grow" title="Open a file saved earlier. It replaces the seams and panels now on the body (Undo brings them back).">Open seams…</button>
+      <input type="file" id="design-file" accept="application/json,.json" hidden>
+    </div>
     <div id="seams"></div>
   </div></details>
   <details open><summary>Panels</summary><div class="body">
     <div class="row"><button id="panel-pick" class="grow" title="Then click inside a closed set of seams">Make a panel</button><button id="panel-clear" class="danger">Clear</button></div>
+    <div class="row"><label title="Cutting line drawn round each flat piece, in cm. 0 turns it off.">Seam allowance <input type="number" id="allowance" step="0.5" min="0" value="1" style="width:4em"> cm</label></div>
     <label class="switch" title="Pull the seams taut and let each panel bridge hollows instead of following the skin. Off: panels are cut straight from the skin."><input type="checkbox" id="drape-on" checked><span>Drape panels over the body</span></label>
     <div class="row">
       <label class="switch" title="Lay the flat pattern over the body with every edge keeping its length (no stretch), so seams may fall short of their lines instead."><input type="checkbox" id="cloth-on"><span>Show cloth simulation</span></label>
@@ -224,7 +234,7 @@ function show(params: BodyParams) {
   drawLines($<HTMLInputElement>('lines').checked ? info : undefined);
   drawLandmarks();
   drawSeams();
-  if (panels.length) refreshPanels();
+  if (panels.length) void refreshPanels();
   render();
   for (const n of MEASUREMENT_NAMES) $(`got-${n}`).textContent = m[n].toFixed(1);
   return m;
@@ -280,6 +290,7 @@ function mergeTicked() {
   const [i, j] = [...mergeSel].filter((k) => k < seams.length).sort((x, y) => x - y);
   mergeSel.clear();
   if (j === undefined) return;
+  checkpoint();
   const m = bodyMesh();
   const [a, b] = [seams[i], seams[j]];
   const ends = (q: Seam) => [q.points[0], q.points[q.points.length - 1]];
@@ -297,16 +308,63 @@ function mergeTicked() {
   redrawSeams();
 }
 const activeSeam = () => seams[seams.length - 1];
-const redrawSeams = () => { drawSeams(); render(); if (panels.length) refreshPanels(); };
+/** After a finished edit: join seams that cross, redraw, remember the design, and re-flatten the panels. */
+const redrawSeams = () => {
+  if (graph) splitCrossings(bodyMesh(), graph, seams);
+  drawSeams();
+  render();
+  saveLocal();
+  if (panels.length) void refreshPanels();
+};
+
+// Undo and redo cover the seams and the panels together. Call checkpoint() just before a change.
+const history = new History<Design>(cloneDesign);
+const design = (): Design => ({ seams, panels });
+const updateHistoryButtons = () => {
+  $<HTMLButtonElement>('seam-undo').disabled = !history.canUndo;
+  $<HTMLButtonElement>('seam-redo').disabled = !history.canRedo;
+};
+function checkpoint() { history.record(design()); updateHistoryButtons(); }
+function goTo(d: Design | undefined) {
+  if (!d) return;
+  seams = d.seams;
+  panels = d.panels;
+  mergeSel.clear();
+  setSnapNote();
+  redrawSeams();
+  if (!panels.length) void refreshPanels();
+  updateHistoryButtons();
+}
+const undo = () => goTo(history.undo(design()));
+const redo = () => goTo(history.redo(design()));
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !body || e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); }
+});
+
+// The design is also kept in this browser, so a reload does not lose it.
+const LOCAL_KEY = 'digital-pattern-drafter-design';
+function saveLocal() {
+  try { localStorage.setItem(LOCAL_KEY, serializeDesign(design(), body.faces.length / 3)); } catch { /* storage may be blocked: the file save still works */ }
+}
+function restoreLocal() {
+  try {
+    const text = localStorage.getItem(LOCAL_KEY);
+    if (!text) return;
+    ({ seams, panels } = parseDesign(text, body.faces.length / 3));
+  } catch { /* nothing saved, or saved for another mesh: start empty */ }
+}
 
 // Panels: a region of the body enclosed by seams. Each is remembered by a point inside it (so it follows the seams
-// and the body), cut out of the mesh, tinted on the body and flattened with its own ease.
-interface Panel { seed: SurfacePoint; horizontal: number; vertical: number }
+// and the body), cut out of the mesh, tinted on the body and flattened with its own ease. The cutting and flattening
+// run in a worker (a panel takes about a second); the page draws what comes back.
+type Panel = PanelSeed;
 let panels: Panel[] = [];
 let pickingPanel = false;
 let outlines: [number, number][][] = []; // the flat outline of each panel, for tests
 const PANEL_COLORS = [0x2a9d8f, 0xe9c46a, 0xe76f51, 0x6a4c93, 0x4361ee];
-const MAX_PANEL_SHARE = 0.6; // a region bigger than this share of the body is not enclosed by the seams
 
 /** Strain colours: red where a piece would have to stretch to lie flat, blue where it would have to squeeze, near-white where it fits. */
 function strainRgb(strain: number): [number, number, number] {
@@ -329,57 +387,71 @@ const colourBy = () => ($<HTMLSelectElement>('panel-colour')).value;
 /** Pale blue where the cloth rests on the body, through to deep orange at 1.2 cm or more off it. */
 const liftRgb = (gap: number): [number, number, number] => { const t = Math.min(1, gap / 1.2); return [0.75 + 0.2 * t, 0.88 - 0.58 * t, 0.95 - 0.9 * t]; };
 
-function derivePanels() {
-  const original = bodyMesh();
-  const cut = cutMesh(original, graph, seams);
-  const everything = area(cut.mesh, Array.from({ length: cut.mesh.triangles.length / 3 }, (_, i) => i));
-  const taut = drapeOn() ? drapeSeams(cut) : { positions: cut.mesh.positions }; // seams pulled taut between their control points; cloth does not follow every dip of the skin
-  return panels.map((panel) => {
-    const triangles = regionFrom(cut, locateInCut(cut, original, panel.seed));
-    const size = area(cut.mesh, triangles);
-    if (size > MAX_PANEL_SHARE * everything) return { panel, triangles, cut, size, error: 'The seams do not enclose this area (add seams until it is closed in).' };
-    const sub = extractSubmesh(cut.mesh, triangles);
-    const loops = boundaryLoops(sub.mesh);
-    if (loops.length !== 1) return { panel, triangles, cut, size, error: `This area has ${loops.length} edges, so it cannot lie flat. A panel that goes right round a limb needs a seam along it.` };
-    const boundary = new Float64Array(3 * sub.vertexMap.length);
-    sub.vertexMap.forEach((v, i) => boundary.set(taut.positions.slice(3 * v, 3 * v + 3), 3 * i));
-    const result = drapeOn() ? drape(sub.mesh, { boundary }) : { mesh: sub.mesh, gap: new Float64Array(sub.vertexMap.length) };
-    const draped = result.mesh;
-    const gap = result.gap;
-    return { panel, triangles, cut, taut, size, sub, draped, gap, loop: loops[0], edges: panelEdges(cut, triangles) ?? [] };
+const panelsWorker = new Worker(new URL('./panels.worker.ts', import.meta.url), { type: 'module' });
+let panelsRequest = 0; // the newest request: older answers are dropped
+const panelsWaiting = new Map<number, () => void>();
+const panelsFailed = (message: string) => {
+  $('panels').style.opacity = '';
+  $('panels').innerHTML = `<div class="item error"><span class="bad">The panels could not be made: ${message}. Your seams are unchanged: change one and try again.</span></div>`;
+};
+panelsWorker.onmessage = (e: MessageEvent<PanelsResponse>) => {
+  const r = e.data;
+  if (r.id === panelsRequest) { if ('error' in r) panelsFailed(r.error); else renderPanels(r.result); }
+  panelsWaiting.get(r.id)?.();
+  panelsWaiting.delete(r.id);
+};
+panelsWorker.onerror = (e) => {
+  panelsFailed(e.message || 'the panel worker crashed');
+  panelsWaiting.forEach((done) => done());
+  panelsWaiting.clear();
+};
+
+/** Cuts and flattens the panels in the worker and draws them; resolves when this request has been answered. */
+function refreshPanels(): Promise<void> {
+  const id = ++panelsRequest;
+  if (panels.length === 0) {
+    for (const c of [...panelGroup.children]) { panelGroup.remove(c); disposeTree(c); }
+    $('panels').style.opacity = '';
+    $('panels').innerHTML = '<span class="hint">No panels yet. Close some seams, press Make a panel, then click inside them.</span>';
+    $<SVGSVGElement & HTMLElement>('flat').style.display = 'none';
+    outlines = [];
+    render();
+    return Promise.resolve();
+  }
+  $('panels').style.opacity = '0.5'; // the old pieces stay until the new ones are ready
+  return new Promise((resolve) => {
+    panelsWaiting.set(id, resolve);
+    panelsWorker.postMessage({ id, positions: shapePositions, triangles: body.faces, seams, panels, drapeOn: drapeOn() } satisfies PanelsRequest);
   });
 }
+const changePanels = () => { saveLocal(); return refreshPanels(); };
 
-function refreshPanels() {
+function renderPanels(result: PanelsResult) {
   for (const c of [...panelGroup.children]) { panelGroup.remove(c); disposeTree(c); }
   const svg = $<SVGSVGElement & HTMLElement>('flat');
+  $('panels').style.opacity = '';
   const rows: string[] = [];
-  if (panels.length === 0) { $('panels').innerHTML = '<span class="hint">No panels yet. Close some seams, press Make a panel, then click inside them.</span>'; svg.style.display = 'none'; render(); return; }
   const shapes: string[] = [];
   const labels: string[] = [];
   outlines = [];
+  const allowance = Math.max(0, parseFloat($<HTMLInputElement>('allowance').value) || 0);
   let x = 0;
   let top = 0;
-  const derived = derivePanels();
   // Which panels each seam is a side of: a seam with two panels is a shared seam line (sewn together).
   const panelsOfSeam = new Map<number, number[]>();
-  derived.forEach((d, i) => d.edges?.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }));
-  // Flatten every panel first: the cloth simulation works on all of them together, sewn at the seams they share.
-  const flats = derived.map((d) => {
-    if (!d.sub) return { error: d.error };
-    try { return { flat: flatten(d.draped, { ease: uniformEase(d.panel.horizontal, d.panel.vertical) }) }; } catch (err) { console.error(err); return { error: `This piece could not be flattened (${err instanceof Error ? err.message : 'unknown error'}). Check its seams and make the panel again.` }; }
-  });
-  const flattened = derived.map((_, i) => i).filter((i) => flats[i].flat);
-  const clothKey = flattened.map((i) => signature(derived[i].draped!.positions, flats[i].flat!.uv, derived[i].sub!.vertexMap)).join('|');
-  lastGarment = flattened.length ? { key: clothKey, pieces: flattened.map((i) => ({ mesh: derived[i].draped!, flat: flats[i].flat!.uv, vertexMap: derived[i].sub!.vertexMap })), targets: derived[flattened[0]].taut!.positions } : undefined;
+  result.panels.forEach((d, i) => { if (d.error === undefined) d.edges.forEach((e) => { if (e.seam !== undefined) panelsOfSeam.set(e.seam, [...(panelsOfSeam.get(e.seam) ?? []), i]); }); });
+  // The cloth simulation works on all the flattened panels together, sewn at the seams they share.
+  const flattened = result.panels.map((_, i) => i).filter((i) => result.panels[i].error === undefined);
+  const flatPanel = (i: number) => result.panels[i] as PanelFlat;
+  const clothKey = flattened.map((i) => signature(flatPanel(i).draped.positions, flatPanel(i).flat.uv, flatPanel(i).sub.vertexMap)).join('|');
+  lastGarment = flattened.length ? { key: clothKey, pieces: flattened.map((i) => ({ mesh: flatPanel(i).draped, flat: flatPanel(i).flat.uv, vertexMap: flatPanel(i).sub.vertexMap })), targets: result.taut } : undefined;
   const garment = clothOn() ? clothCache.get(clothKey) : undefined; // simulations are run by the button, not here
-  derived.forEach((d, i) => {
+  result.panels.forEach((d, i) => {
     const color = PANEL_COLORS[i % PANEL_COLORS.length];
     const hex = '#' + color.toString(16).padStart(6, '0');
-    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${d.panel.horizontal}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${d.panel.vertical}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
-    if (!d.sub) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
-    const flat = flats[i].flat;
-    if (!flat) { rows.push(`<div class="item error">${ease}<span class="bad">${flats[i].error}</span></div>`); return; }
+    const ease = `<div class="item-head"><span style="width:10px;height:10px;border-radius:2px;background:${hex}"></span><b>Panel ${i + 1}</b><label title="Ease, % across">ease across <input type="number" step="1" value="${panels[i]?.horizontal ?? 0}" data-panel="${i}" data-axis="horizontal">%</label><label title="Ease, % down">down <input type="number" step="1" value="${panels[i]?.vertical ?? 0}" data-panel="${i}" data-axis="vertical">%</label><button data-delete-panel="${i}" title="Remove this panel">✕</button></div>`;
+    if (d.error !== undefined) { rows.push(`<div class="item error">${ease}<span class="bad">${d.error}</span></div>`); return; }
+    const flat = d.flat;
     // Cloth simulation: lay the flat patterns over the body, sewn together along shared seams, keeping every edge its
     // pattern length. What is left of stretch is real; where the patterns cannot reach the seam lines without stretching, the seam falls short instead.
     const cloth = garment?.[flattened.indexOf(i)];
@@ -404,7 +476,9 @@ function refreshPanels() {
     const ys = d.loop.map((v) => pat.uv[2 * v + 1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     outlines.push(d.loop.map((v) => [pat.uv[2 * v], pat.uv[2 * v + 1]] as [number, number]));
-    const at = (v: number) => `${(pat.uv[2 * v] - x0 + x).toFixed(2)},${(y1 - pat.uv[2 * v + 1]).toFixed(2)}`;
+    // Flat piece drawn in the page's units (cm), y pointing down, room left all round for the seam allowance.
+    const place = (v: number): [number, number] => [pat.uv[2 * v] - x0 + ox + allowance, y1 - pat.uv[2 * v + 1] + allowance];
+    const at = (v: number) => place(v).map((c) => c.toFixed(2)).join(',');
     if (tooCurved) { // the flat piece too, coloured by stretch, with a red outline: this one is not a valid pattern piece
       const tri = d.sub.mesh.triangles;
       for (let t = 0; t < tri.length; t += 3) {
@@ -414,9 +488,10 @@ function refreshPanels() {
       shapes.push(`<path fill="none" stroke="#c00" stroke-width="0.5" stroke-dasharray="1.2 0.8" d="M${d.loop.map(at).join('L')}Z"/>`);
     } else {
       shapes.push(`<path fill="${hex}" fill-opacity="0.35" stroke="${hex}" stroke-width="0.3" d="M${d.loop.map(at).join('L')}Z"/>`);
+      if (allowance > 0) shapes.push(`<path fill="none" stroke="#222" stroke-width="0.25" stroke-dasharray="1 0.6" d="M${offsetOutline(d.loop.map(place), allowance).map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).join('L')}Z"/>`);
     }
-    x += x1 - x0 + 4;
-    top = Math.max(top, y1 - y0);
+    x += x1 - x0 + 4 + 2 * allowance;
+    top = Math.max(top, y1 - y0 + 2 * allowance);
     const subOf = new Map(d.sub.vertexMap.map((cutVertex, subVertex) => [cutVertex, subVertex]));
     const flatLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(pat.uv[2 * a] - pat.uv[2 * b], pat.uv[2 * a + 1] - pat.uv[2 * b + 1]); }, 0);
     const drapedLength = (vs: number[]) => vs.slice(1).reduce((sum, v, k) => { const [a, b] = [subOf.get(vs[k])!, subOf.get(v)!]; return sum + Math.hypot(...[0, 1, 2].map((c) => shape.positions[3 * a + c] - shape.positions[3 * b + c]) as [number, number, number]); }, 0);
@@ -425,8 +500,8 @@ function refreshPanels() {
       if (e.seam === undefined) continue;
       const others = (panelsOfSeam.get(e.seam) ?? []).filter((j) => j !== i).map((j) => j + 1);
       sides.push(`Seam ${e.seam + 1}: ${drapedLength(e.vertices).toFixed(1)} cm (flat ${flatLength(e.vertices).toFixed(1)})${others.length ? `, shared with panel ${others.join(', ')}` : ''}`);
-      const mid = subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!;
-      labels.push(`<text x="${(pat.uv[2 * mid] - x0 + ox).toFixed(2)}" y="${(y1 - pat.uv[2 * mid + 1]).toFixed(2)}" font-size="2.6" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.7" paint-order="stroke">${e.seam + 1}</text>`);
+      const [lx, ly] = place(subOf.get(e.vertices[Math.floor(e.vertices.length / 2)])!);
+      labels.push(`<text x="${lx.toFixed(2)}" y="${ly.toFixed(2)}" font-size="2.2" text-anchor="middle" dominant-baseline="middle" fill="#222" stroke="#fff" stroke-width="0.6" paint-order="stroke">${e.seam + 1}: ${flatLength(e.vertices).toFixed(1)}</text>`);
     }
     const verdict = tooCurved
       ? `<span class="bad">This piece cannot lie flat: it would stretch or squeeze by up to ${(100 * strain.worstStrain).toFixed(1)}% (limit ${(100 * FLATTEN_TOLERANCE).toFixed(1)}%). Add a dart or more seam lines through the red (stretched) and blue (squeezed) areas, then make the panel again.</span>`
@@ -447,13 +522,14 @@ function refreshPanels() {
     svg.innerHTML = shapes.join('') + labels.join('');
   }
   $('panels').querySelectorAll<HTMLInputElement>('input[data-panel]').forEach((el) => {
-    el.onchange = () => { panels[Number(el.dataset.panel)][el.dataset.axis as 'horizontal' | 'vertical'] = Number(el.value) || 0; refreshPanels(); };
+    el.onchange = () => { checkpoint(); panels[Number(el.dataset.panel)][el.dataset.axis as 'horizontal' | 'vertical'] = Number(el.value) || 0; void changePanels(); };
   });
   $('panels').querySelectorAll<HTMLButtonElement>('button[data-delete-panel]').forEach((el) => {
-    el.onclick = () => { panels.splice(Number(el.dataset.deletePanel), 1); refreshPanels(); };
+    el.onclick = () => { checkpoint(); panels.splice(Number(el.dataset.deletePanel), 1); void changePanels(); };
   });
   render();
 }
+$('allowance').onchange = () => { if (panels.length) void refreshPanels(); };
 $('panel-pick').onclick = () => {
   pickingPanel = !pickingPanel;
   $('panel-pick').classList.toggle('active', pickingPanel);
@@ -511,7 +587,7 @@ $('cloth-run').onclick = async () => {
 };
 $('panel-colour').onchange = () => { $('lift-key').textContent = colourBy() === 'lift' ? 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).' : ''; refreshPanels(); };
 $('lift-key').textContent = 'Pale blue: resting on the body. Orange: 1.2 cm or more off it (bridging a hollow).';
-$('panel-clear').onclick = () => { panels = []; refreshPanels(); };
+$('panel-clear').onclick = () => { if (!panels.length) return; checkpoint(); panels = []; void changePanels(); };
 
 function drawLandmarks() {
   for (const c of [...landmarkGroup.children]) { landmarkGroup.remove(c); disposeTree(c); }
@@ -608,6 +684,7 @@ const setSnapNote = (name?: string) => { $('snap').textContent = name ? `Snapped
 let down: { x: number; y: number } | undefined;
 let dragging: { seam: number; index: number } | undefined;
 let grabbedFrom: { x: number; y: number } | undefined; // where the press on a control point began, to tell a click from a drag
+let dragRecorded = false; // the state before a drag is put in the history once, when the point first moves
 let draggedOnto:ReturnType<typeof snapAt>['junction']; // where a dragged point would join the middle of another seam, applied when it is dropped
 renderer.domElement.addEventListener('pointerdown', (e) => {
   down = { x: e.clientX, y: e.clientY };
@@ -619,6 +696,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   down = undefined;
   grabbedFrom = { x: e.clientX, y: e.clientY };
   if (e.shiftKey) {
+    checkpoint();
     seams[grab.seam].points.splice(grab.index, 1);
     if (seams[grab.seam].points.length < 3) seams[grab.seam].closed = false;
     if (seams[grab.seam].points.length === 0) seams.splice(grab.seam, 1);
@@ -634,6 +712,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (dragging) {
     if (!hit) return;
     const snapped = snapAt(e, hit, dragging);
+    if (!dragRecorded) { checkpoint(); dragRecorded = true; }
     seams[dragging.seam].points[dragging.index] = snapped.point;
     draggedOnto = snapped.junction;
     setSnapNote(snapped.target);
@@ -655,6 +734,8 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     grabbedFrom = undefined;
     // A click (not a drag) on the first point of the seam being drawn closes it.
     if (clicked && dragging.index === 0 && dragging.seam === seams.length - 1 && !activeSeam().closed && activeSeam().points.length > 1) {
+      if (!dragRecorded) checkpoint();
+      dragRecorded = false;
       activeSeam().closed = true;
       draggedOnto = undefined;
       dragging = undefined;
@@ -665,6 +746,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     }
     if (draggedOnto) seams[dragging.seam].points[dragging.index] = insertControlPoint(bodyMesh(), seams[draggedOnto.seam], draggedOnto.leg, draggedOnto.at);
     draggedOnto = undefined;
+    dragRecorded = false;
     dragging = undefined;
     renderer.domElement.releasePointerCapture(e.pointerId);
     redrawSeams();
@@ -677,14 +759,16 @@ renderer.domElement.addEventListener('pointerup', (e) => {
   const hit = pick(e);
   if (!hit) return;
   if (pickingPanel) {
+    checkpoint();
     panels.push({ seed: hit.surface, horizontal: 0, vertical: 0 });
     pickingPanel = false;
     $('panel-pick').textContent = 'Make a panel';
     $('panel-pick').classList.remove('active');
     renderer.domElement.style.cursor = '';
-    refreshPanels();
+    void changePanels();
     return;
   }
+  checkpoint();
   if (!activeSeam() || activeSeam().closed) seams.push({ points: [], closed: false });
   const snapped = snapAt(e, hit);
   activeSeam().points.push(snapped.junction ? insertControlPoint(bodyMesh(), seams[snapped.junction.seam], snapped.junction.leg, snapped.junction.at) : snapped.point);
@@ -718,13 +802,14 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const hit = p[2] === 999 ? raycast(bodyMesh(), [p[0], p[1], 300], [0, 0, -1]) : undefined;
     return hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), p);
   };
+  checkpoint();
   seams.push({ points: points.map(place), closed });
   redrawSeams();
 };
-(window as unknown as Record<string, unknown>).panelAt = (point: [number, number, number], horizontal = 0, vertical = 0) => {
+(window as unknown as Record<string, unknown>).panelAt = async (point: [number, number, number], horizontal = 0, vertical = 0) => {
   const hit = point[2] === 999 ? raycast(bodyMesh(), [point[0], point[1], 300], [0, 0, -1]) : undefined;
   panels.push({ seed: hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), point), horizontal, vertical });
-  refreshPanels();
+  await changePanels();
   return outlines[outlines.length - 1];
 };
 // A seam point can also be given as a ray ({ origin, dir }: the first body point it hits) or a place ({ point }).
@@ -735,12 +820,13 @@ const placeSpec = (spec: PointSpec): SurfacePoint => {
   return { tri: hit.tri, bary: hit.bary };
 };
 (window as unknown as Record<string, unknown>).seamFromSpecs = (specs: PointSpec[], closed: boolean) => {
+  checkpoint();
   seams.push({ points: specs.map(placeSpec), closed });
   redrawSeams();
 };
-(window as unknown as Record<string, unknown>).panelAtSpec = (spec: PointSpec) => {
+(window as unknown as Record<string, unknown>).panelAtSpec = async (spec: PointSpec) => {
   panels.push({ seed: placeSpec(spec), horizontal: 0, vertical: 0 });
-  refreshPanels();
+  await changePanels();
   return outlines[outlines.length - 1];
 };
 (window as unknown as Record<string, unknown>).seamPathPoint = (seam: number, fraction: number) => {
@@ -764,23 +850,47 @@ const placeSpec = (spec: PointSpec): SurfacePoint => {
   return [0, 1, 2].map((k) => g.points[3 * i + k] + t * (g.points[3 * (i + 1) + k] - g.points[3 * i + k]));
 };
 (window as unknown as Record<string, unknown>).seamState = () => seams.map((q) => ({ closed: q.closed, points: q.points.map((p) => pointOnSurface(bodyMesh(), p)) }));
-$('seam-undo').onclick = () => {
-  if (!activeSeam()) return;
-  if (activeSeam().closed) activeSeam().closed = false;
-  else activeSeam().points.pop();
-  if (activeSeam().points.length === 0) seams.pop();
-  redrawSeams();
-};
-$('seam-close').onclick = () => { if (activeSeam() && activeSeam().points.length > 2) { activeSeam().closed = true; redrawSeams(); } };
-$('seam-new').onclick = () => { if (activeSeam() && activeSeam().points.length > 0 && !activeSeam().closed) { seams.push({ points: [], closed: false }); redrawSeams(); } };
+$('seam-undo').onclick = undo;
+$('seam-redo').onclick = redo;
+$('seam-close').onclick = () => { if (activeSeam() && activeSeam().points.length > 2 && !activeSeam().closed) { checkpoint(); activeSeam().closed = true; redrawSeams(); } };
+$('seam-new').onclick = () => { if (activeSeam() && activeSeam().points.length > 0 && !activeSeam().closed) { checkpoint(); seams.push({ points: [], closed: false }); redrawSeams(); } };
 $('seam-mirror').onclick = () => {
   const seam = activeSeam();
   if (!seam || seam.points.length === 0) return;
+  checkpoint();
   seams.push(mirrorSeam(bodyMesh(), seam));
   setSnapNote();
   redrawSeams();
 };
-$('seam-clear').onclick = () => { seams = []; redrawSeams(); };
+$('seam-clear').onclick = () => { if (!seams.length) return; checkpoint(); seams = []; redrawSeams(); };
+
+$('design-save').onclick = () => {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(new Blob([serializeDesign(design(), body.faces.length / 3)], { type: 'application/json' }));
+  link.download = 'seams.json';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  status.textContent = `Saved ${seams.length} seams and ${panels.length} panels to seams.json.`;
+};
+$('design-load').onclick = () => $('design-file').click();
+$('design-file').onchange = async (e) => {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  try {
+    const loaded = parseDesign(await file.text(), body.faces.length / 3);
+    checkpoint();
+    seams = loaded.seams;
+    panels = loaded.panels;
+    mergeSel.clear();
+    redrawSeams();
+    if (!panels.length) void refreshPanels();
+    status.textContent = `Opened ${seams.length} seams and ${panels.length} panels from ${file.name}.`;
+  } catch (err) {
+    status.innerHTML = `<span class="bad">${err instanceof Error ? err.message : String(err)}. Nothing was changed.</span>`;
+  }
+};
 
 const worker = new Worker(new URL('./fit.worker.ts', import.meta.url), { type: 'module' });
 let targetsAtFit: FitTargets = {};
@@ -847,8 +957,10 @@ loadBodyFromUrl(import.meta.env.BASE_URL + 'body')
     body = b;
     graph = new SurfaceGraph(b.faces, b.vertexCount);
     measurer = new Measurer(b);
+    restoreLocal();
     show({ z: b.presets.female });
     setControlsEnabled(true);
+    updateHistoryButtons();
     status.textContent = 'Ready. Pick an example or type measurements, then press Fit body.';
   })
   .catch((err) => { status.innerHTML = `<span class="bad">Could not load the body model: ${err instanceof Error ? err.message : String(err)}. Reload the page to try again.</span>`; });
