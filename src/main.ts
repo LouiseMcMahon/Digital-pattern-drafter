@@ -11,7 +11,6 @@ import { FLATTEN_TOLERANCE } from './core/flatten';
 import { History } from './core/history';
 import { len, sub } from './core/mesh';
 import type { PanelsResult } from './core/panelPipeline';
-import { princessSeam } from './core/princess';
 import { FIXTURES } from './core/fixtures';
 import { type Seam, type SnapTarget, type SurfacePoint, SurfaceGraph, closestSurfacePoint, findControlPoint, insertControlPoint, nearestOnSeams, polylineLength, pointOnSurface, raycast, snapPoint, snapToVertex } from './core/seam';
 import { MEASUREMENT_LABELS, MEASUREMENT_NAMES, type MeasurementName, Measurer } from './core/measure';
@@ -48,10 +47,6 @@ controls.innerHTML = `
       <button id="seam-new" title="Finish this seam and start another">New seam</button>
       <button id="seam-mirror" title="Copy the last seam to the other side of the body (points on the centre line are shared). Draw one half, mirror it, then make a panel.">Mirror</button>
       <button id="seam-clear" class="danger">Clear</button>
-    </div>
-    <div class="row">
-      <button id="princess-l" title="Draw a princess seam on the wearer's left: from the shoulder point over the bust apex, straight down to the waist and hip lines">Princess seam L</button>
-      <button id="princess-r" title="The same on the wearer's right">Princess seam R</button>
     </div>
     <div class="row">
       <button id="design-save" class="grow" title="Save the seams and panels to a file">Save seams…</button>
@@ -159,8 +154,6 @@ let landmarks: SnapTarget[] = [];
 // Guide lines (the bust, waist, hip... lines round the body) and the points where they cross centre front, centre back and the sides.
 let guides: { name: string; points: number[] }[] = [];
 let ringTargets: SnapTarget[] = [];
-// The measured rings (waist, hip, ...) as xyz points, for drawing a princess seam down to them.
-let rings: Record<string, number[]> = {};
 // The path of every leg of every seam (control point to control point), for snapping to the middle of a seam.
 let seamLegs: number[][][] = [];
 
@@ -215,7 +208,6 @@ function show(params: BodyParams) {
   landmarks = info.marks.filter((k) => !k.name.startsWith('crease')).map((k) => ({ name: k.name, point: k.point }));
   guides = [];
   ringTargets = [];
-  rings = Object.fromEntries(info.rings.map((r) => [r.name, Array.from(r.points)]));
   for (const g of GUIDE_RINGS) {
     const ring = info.rings.find((r) => r.name === g.measurement);
     if (!ring || ring.points.length < 9) continue;
@@ -707,6 +699,7 @@ renderer.domElement.addEventListener('pointerup', (e) => {
     const hit = p[2] === 999 ? raycast(bodyMesh(), [p[0], p[1], 300], [0, 0, -1]) : undefined;
     return hit ? { tri: hit.tri, bary: hit.bary } : closestSurfacePoint(bodyMesh(), p);
   };
+  checkpoint();
   seams.push({ points: points.map(place), closed });
   redrawSeams();
 };
@@ -724,6 +717,7 @@ const placeSpec = (spec: PointSpec): SurfacePoint => {
   return { tri: hit.tri, bary: hit.bary };
 };
 (window as unknown as Record<string, unknown>).seamFromSpecs = (specs: PointSpec[], closed: boolean) => {
+  checkpoint();
   seams.push({ points: specs.map(placeSpec), closed });
   redrawSeams();
 };
@@ -766,18 +760,6 @@ $('seam-mirror').onclick = () => {
   redrawSeams();
 };
 $('seam-clear').onclick = () => { if (!seams.length) return; checkpoint(); seams = []; redrawSeams(); };
-
-function addPrincessSeam(side: 'L' | 'R') {
-  const mark = (name: string) => landmarks.find((k) => k.name === name)?.point;
-  const [shoulder, apex, waistRing, hipRing] = [mark(`shoulder point ${side}`), mark(`bust apex ${side}`), rings.waist, rings.hip];
-  if (!shoulder || !apex || !waistRing || !hipRing) { status.innerHTML = '<span class="bad">The shoulder point, bust apex, waist line and hip line are needed for a princess seam, and this body does not have them.</span>'; return; }
-  checkpoint();
-  seams.push(princessSeam(bodyMesh(), { shoulder, apex, waistRing, hipRing }));
-  redrawSeams();
-  status.textContent = `Princess seam drawn on the ${side === 'L' ? 'left' : 'right'}: drag its points to adjust it, or Mirror it to the other side.`;
-}
-$('princess-l').onclick = () => addPrincessSeam('L');
-$('princess-r').onclick = () => addPrincessSeam('R');
 
 $('design-save').onclick = () => {
   const link = document.createElement('a');

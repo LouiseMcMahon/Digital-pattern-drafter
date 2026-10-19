@@ -264,28 +264,26 @@ try {
   if (drawnPoints[0].points.length !== 2 || Math.abs(drawnPoints[0].points[1][1] - onLine[1]) > 0.3) fail('the seam point placed on the waist line is not at the waist height');
   await page.uncheck('#draw');
 
-  // Princess seam, undo and redo, saving and opening seams, and seams that cross.
+  // Undo and redo, saving and opening seams, and seams that cross.
   await page.click('#seam-clear');
   await page.click('#panel-clear');
-  await page.click('#princess-l');
-  const princess = await page.evaluate(() => ({ state: window.seamState(), lm: Object.fromEntries(window.landmarkPoints().map((l) => [l.name, l.point])) }));
-  if (princess.state.length !== 1 || princess.state[0].points.length !== 4) fail(`the princess seam button should draw one seam of four points: ${JSON.stringify(princess.state.map((q) => q.points.length))}`);
   const dist = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
-  if (dist(princess.state[0].points[0], princess.lm['shoulder point L']) > 0.5 || dist(princess.state[0].points[1], princess.lm['bust apex L']) > 0.5) fail('the princess seam does not start at the shoulder point and pass through the bust apex');
-  if (!(princess.state[0].points[2][1] < princess.state[0].points[1][1]) || !(princess.state[0].points[3][1] < princess.state[0].points[2][1])) fail('the princess seam does not run down through the waist to the hip');
+  await page.evaluate(() => window.seamFromSpecs([{ origin: [-12, 120, 300], dir: [0, 0, -1] }, { origin: [0, 110, 300], dir: [0, 0, -1] }, { origin: [12, 100, 300], dir: [0, 0, -1] }], false));
+  const firstSeam = { state: await page.evaluate(() => window.seamState()) };
+  if (firstSeam.state.length !== 1 || firstSeam.state[0].points.length !== 3) fail('expected one seam of three points before undo');
   await page.click('#seam-undo');
-  if ((await page.evaluate(() => window.seamState())).length !== 0) fail('Undo did not remove the princess seam');
+  if ((await page.evaluate(() => window.seamState())).length !== 0) fail('Undo did not remove the seam');
   await page.click('#seam-redo');
   const redone = await page.evaluate(() => window.seamState());
-  if (redone.length !== 1 || dist(redone[0].points[3], princess.state[0].points[3]) > 1e-9) fail('Redo did not bring the princess seam back as it was');
+  if (redone.length !== 1 || dist(redone[0].points[2], firstSeam.state[0].points[2]) > 1e-9) fail('Redo did not bring the seam back as it was');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#design-save')]);
   const saved = JSON.parse(readFileSync(await download.path(), 'utf8'));
-  if (saved.seams.length !== 1 || saved.seams[0].points.length !== 4) fail('the saved file does not hold the princess seam');
+  if (saved.seams.length !== 1 || saved.seams[0].points.length !== 3) fail('the saved file does not hold the seam');
   await page.click('#seam-clear');
   await page.setInputFiles('#design-file', await download.path());
   await page.waitForFunction(() => window.seamState().length === 1, null, { timeout: 10000 }).catch(() => fail('opening the saved file did not bring the seam back'));
   const reopened = await page.evaluate(() => window.seamState());
-  if (dist(reopened[0].points[2], princess.state[0].points[2]) > 1e-9) fail('the reopened seam is not where it was saved');
+  if (dist(reopened[0].points[2], firstSeam.state[0].points[2]) > 1e-9) fail('the reopened seam is not where it was saved');
   await page.setInputFiles('#design-file', { name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('{"nope":1}') });
   await page.waitForFunction(() => document.getElementById('status')?.textContent?.includes('Not a usable design file'), null, { timeout: 10000 }).catch(() => fail('a bad file was not reported'));
   if ((await page.evaluate(() => window.seamState())).length !== 1) fail('a bad file changed the seams');
