@@ -1,7 +1,7 @@
 import type { Seam, SurfacePoint } from './seam';
 
 /** A panel that hangs free from a seam (a skirt from a waist seam) instead of lying on the body: see hanging.ts. */
-export interface Hang { seam: number; length: number; flare: number }
+export interface Hang { seam: number; length: number; flare: number; /** A fitted (pencil) skirt: follows the body to its widest, then falls to the hem. */ fitted?: boolean }
 
 /**
  * A panel is remembered by a point inside it (so it follows the seams and the body) and its own ease, in percent.
@@ -68,10 +68,11 @@ export function parseDesign(text: string, triangleCount: number): Design {
     if (typeof p.horizontal !== 'number' || !Number.isFinite(p.horizontal) || typeof p.vertical !== 'number' || !Number.isFinite(p.vertical)) fail(`panel ${i + 1} has no valid ease`);
     const seed = readPoint(p.seed, triangleCount, `panel ${i + 1} seed`);
     if (p.hang === undefined) return { seed, horizontal: p.horizontal, vertical: p.vertical };
-    const h = p.hang as { seam?: unknown; length?: unknown; flare?: unknown } | null;
+    const h = p.hang as { seam?: unknown; length?: unknown; flare?: unknown; fitted?: unknown } | null;
     if (typeof h !== 'object' || h === null || typeof h.seam !== 'number' || !Number.isInteger(h.seam) || h.seam < 0 || h.seam >= (raw.seams as unknown[]).length) fail(`panel ${i + 1} hangs from a seam that does not exist`);
     if (typeof h.length !== 'number' || !(h.length > 0) || !Number.isFinite(h.length) || typeof h.flare !== 'number' || !Number.isFinite(h.flare)) fail(`panel ${i + 1} has no valid length or flare`);
-    return { seed, horizontal: p.horizontal, vertical: p.vertical, hang: { seam: h.seam, length: h.length, flare: h.flare } };
+    if (h.fitted !== undefined && typeof h.fitted !== 'boolean') fail(`panel ${i + 1} does not say whether it is fitted`);
+    return { seed, horizontal: p.horizontal, vertical: p.vertical, hang: { seam: h.seam, length: h.length, flare: h.flare, ...(h.fitted ? { fitted: true } : {}) } };
   });
   return { seams, panels };
 }

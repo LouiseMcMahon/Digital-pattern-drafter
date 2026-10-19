@@ -119,5 +119,7 @@ describe('hanging panels', () => {
     expect(() => parseDesign(bad({ seam: 0, length: 0, flare: 0 }), N)).toThrow(/valid length or flare/);
     expect(() => parseDesign(bad({ seam: 0, length: 5, flare: 'x' }), N)).toThrow(/valid length or flare/);
     expect(() => parseDesign(bad({ seam: 0, length: 5, flare: 0 }), N)).not.toThrow();
+    expect(() => parseDesign(bad({ seam: 0, length: 5, flare: 0, fitted: 'yes' }), N)).toThrow(/whether it is fitted/);
+    expect(parseDesign(bad({ seam: 0, length: 5, flare: 0, fitted: true }), N).panels[0].hang!.fitted).toBe(true);
   });
 });

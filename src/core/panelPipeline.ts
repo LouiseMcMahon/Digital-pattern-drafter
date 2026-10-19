@@ -95,7 +95,7 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
       let path = Array.from(graph.seamPath(original.positions, seam));
       const closed = seam.closed && seam.points.length > 2;
       if (closed) path = cutAt(path, pointOnSurface(original, panel.seed)); // the seed is where the side seam goes
-      const built = buildHanging(original, path, { length: hang.length, flare: hang.flare });
+      const built = buildHanging(original, path, { length: hang.length, flare: hang.flare, fitted: hang.fitted });
       const loops = boundaryLoops(built.mesh);
       if (loops.length !== 1) return { error: 'This hanging panel is not a single piece.', size: 0, triangles: [] };
       const flat = flatten(built.mesh, { ease: uniformEase(panel.horizontal, panel.vertical) });

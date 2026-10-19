@@ -1,4 +1,4 @@
-import { type Mesh, type Vec3, len, sub } from './mesh';
+import { type Mesh, type Vec3, cross, len, sub } from './mesh';
 
 /**
  * A hanging panel: cloth fastened to the body along a seam and falling free below it, like a skirt from a waist seam.
@@ -11,6 +11,12 @@ export interface HangingOptions {
   length: number;
   /** How much further out the hem is than the seam, in percent of the seam's distance from the middle line of the body (0 hangs straight, 50 makes the hem half as wide again). */
   flare: number;
+  /**
+   * A fitted (pencil) skirt instead of a cone: the panel follows the trunk down to its widest row (the hips) with `standoff`
+   * of room, then runs from there to the hem, `flare` percent wider (negative: narrower) than at the hips. It is not a cone,
+   * so it does not lie flat on its own: the strain shows how much shaping (darts) the pattern needs.
+   */
+  fitted?: boolean;
   /** Distance kept between the cloth and the body at the hem (cm); it grows from nothing at the seam. Default 0.3. */
   standoff?: number;
   /** Target spacing of the mesh (cm). Default 1.5. */
@@ -55,14 +61,15 @@ export function polylineLengthOf(poly: ArrayLike<number>): number {
 }
 
 /**
- * Where, along the horizontal ray from `from` in direction (dx, dz) (unit) at height `from[1]`, the mesh is first
- * crossed: the distance, or undefined if it is not. From a point inside the trunk this is the skin of the trunk, not
- * an arm that hangs beside it.
+ * How far out the body reaches along the horizontal ray from `from` in direction (dx, dz) (unit) at height `from[1]`:
+ * where the ray leaves the first solid it meets, or undefined if it meets none. From a point inside the trunk that is the
+ * skin of the trunk, not an arm hanging beside it; from a point in the gap between the legs it is the far side of the
+ * leg, not its inner face.
  */
 export function firstHit(m: Mesh, minY: Float64Array, maxY: Float64Array, from: Vec3, dx: number, dz: number): number | undefined {
   const y = from[1];
   const { positions: P, triangles: T } = m;
-  let best: number | undefined;
+  const crossings: { along: number; leaving: boolean }[] = [];
   for (let t = 0; t < T.length / 3; t++) {
     if (y < minY[t] || y > maxY[t]) continue;
     // The triangle cut by the plane at height y is a segment; intersect it with the ray in the plane (2D, x and z).
@@ -85,9 +92,14 @@ export function firstHit(m: Mesh, minY: Float64Array, maxY: Float64Array, from: 
     const wz = p[1] - from[2];
     const along = (wx * ez - wz * ex) / denom; // distance along the ray
     const across = (wx * dz - wz * dx) / denom; // 0 to 1 along the segment
-    if (along > 1e-9 && across >= -1e-9 && across <= 1 + 1e-9 && (best === undefined || along < best)) best = along;
+    if (!(along > 1e-9 && across >= -1e-9 && across <= 1 + 1e-9)) continue;
+    // Which way the surface faces there (outward normals): the ray leaves the solid if it goes the way the surface faces.
+    const [a, b, c] = [0, 1, 2].map((k) => T[3 * t + k]);
+    const n = cross([P[3 * b] - P[3 * a], P[3 * b + 1] - P[3 * a + 1], P[3 * b + 2] - P[3 * a + 2]], [P[3 * c] - P[3 * a], P[3 * c + 1] - P[3 * a + 1], P[3 * c + 2] - P[3 * a + 2]]);
+    crossings.push({ along, leaving: n[0] * dx + n[2] * dz > 0 });
   }
-  return best;
+  crossings.sort((p, q) => p.along - q.along);
+  return crossings.find((c) => c.leaving)?.along;
 }
 
 /**
@@ -146,16 +158,39 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
     const hit = firstHit(body, minY, maxY, [middle[0], y, middle[2]], direction[i][0], direction[i][1]);
     if (hit === undefined) continue;
     reach[index(i, j)] = hit;
-    if (radius[i] > 1e-9) used = Math.max(used, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
+    if (!options.fitted && radius[i] > 1e-9) used = Math.max(used, (100 * ((hit + clearance(j)) / radius[i] - 1)) / t);
   }
 
   const pos = new Float64Array(3 * columns * rows);
   const gap = new Float64Array(columns * rows);
+  const out = new Float64Array(columns * rows); // distance of each vertex from the middle line
+  if (options.fitted) {
+    // Follow the trunk to its widest row, then run to the hem.
+    let hipRow = 1;
+    let widest = -Infinity;
+    for (let j = 1; j < rows; j++) {
+      let sum = 0;
+      for (let i = 0; i < columns; i++) sum += Number.isFinite(reach[index(i, j)]) ? reach[index(i, j)] : 0;
+      if (sum > widest + 1e-9) { widest = sum; hipRow = j; }
+    }
+    for (let i = 0; i < columns; i++) {
+      let last = radius[i];
+      const follow: number[] = [radius[i]];
+      for (let j = 1; j <= hipRow; j++) { last = Number.isFinite(reach[index(i, j)]) ? Math.max(reach[index(i, j)] + standoff, radius[i]) : last; follow.push(last); }
+      for (let pass = 0; pass < 3; pass++) for (let j = 1; j < hipRow; j++) follow[j] = Math.max(0.25 * follow[j - 1] + 0.5 * follow[j] + 0.25 * follow[j + 1], Number.isFinite(reach[index(i, j)]) ? reach[index(i, j)] + standoff : 0);
+      for (let j = 0; j < rows; j++) {
+        const below = rows - 1 > hipRow ? (j - hipRow) / (rows - 1 - hipRow) : 0;
+        const r = j <= hipRow ? follow[j] : follow[hipRow] * (1 + (flare / 100) * below);
+        out[index(i, j)] = j > hipRow && Number.isFinite(reach[index(i, j)]) ? Math.max(r, reach[index(i, j)] + standoff) : r;
+      }
+    }
+  } else {
+    for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) out[index(i, j)] = radius[i] * (1 + ((j / (rows - 1)) * used) / 100);
+  }
   for (let i = 0; i < columns; i++) for (let j = 0; j < rows; j++) {
-    const t = j / (rows - 1);
-    const grow = 1 + (t * used) / 100;
-    pos.set([middle[0] + (seam[i][0] - middle[0]) * grow, seam[i][1] - t * length, middle[2] + (seam[i][2] - middle[2]) * grow], 3 * index(i, j));
-    gap[index(i, j)] = Number.isFinite(reach[index(i, j)]) ? Math.max(0, radius[i] * grow - reach[index(i, j)]) : 0;
+    const r = out[index(i, j)];
+    pos.set([middle[0] + direction[i][0] * r, seam[i][1] - (j / (rows - 1)) * length, middle[2] + direction[i][1] * r], 3 * index(i, j));
+    gap[index(i, j)] = Number.isFinite(reach[index(i, j)]) ? Math.max(0, r - reach[index(i, j)]) : 0;
   }
 
   const triangles: number[] = [];

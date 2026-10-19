@@ -112,3 +112,28 @@ describe('the side seam of a closed hanging panel', () => {
     expect(Math.hypot(first[0], first[2] - 10.3)).toBeLessThan(1.5);
   });
 });
+
+describe('a fitted (pencil) panel', () => {
+  const hips = () => { // a trunk 10 wide at the waist (y 60), 15 wide from the hips (y 45) to y 30, then narrower
+    const b = tube(10);
+    for (let v = 0; v < b.positions.length / 3; v++) { const y = b.positions[3 * v + 1]; const k = y >= 60 ? 1 : y > 45 ? 1 + (0.5 * (60 - y)) / 15 : y > 30 ? 1.5 : 1 + (0.5 * Math.max(0, y)) / 30 ; b.positions[3 * v] *= k; b.positions[3 * v + 2] *= k; }
+    return b;
+  };
+  const path = Array.from({ length: 49 }, (_, k) => [10 * Math.cos((2 * Math.PI * k) / 48), 60, 10 * Math.sin((2 * Math.PI * k) / 48)]).flat();
+  const radiusAt = (h: ReturnType<typeof buildHanging>, row: number) => Math.hypot(h.mesh.positions[3 * row], h.mesh.positions[3 * row + 2]);
+  it('follows the hips, then tapers to the hem', () => {
+    const h = buildHanging(hips(), path, { length: 40, flare: -20, fitted: true });
+    const hipRow = Math.round((15 / 40) * (h.rows - 1)); // the trunk is widest from y = 45
+    expect(radiusAt(h, 0)).toBeCloseTo(10, 0);
+    expect(radiusAt(h, hipRow + 1)).toBeGreaterThan(14.5);
+    expect(radiusAt(h, h.rows - 1)).toBeLessThan(0.9 * radiusAt(h, hipRow + 1)); // y 20: the trunk is 11.7 wide there, so the hem can taper in
+    expect(h.flare).toBe(-20);
+  });
+  it('is not flat, and says so through the strain', () => {
+    const body = hips();
+    const g = new SurfaceGraph(body.triangles, body.positions.length / 3);
+    const seam: Seam = { points: [0, 1, 2, 3].map((k) => { const a = (k * Math.PI) / 2; const hit = raycast(body, [30 * Math.cos(a), 60, 30 * Math.sin(a)], [-Math.cos(a), 0, -Math.sin(a)])!; return { tri: hit.tri, bary: hit.bary }; }), closed: true };
+    const { panels } = computePanels(body, g, [seam], [{ seed: seam.points[0], horizontal: 0, vertical: 0, hang: { seam: 0, length: 40, flare: 0, fitted: true } }]);
+    expect(flatOf(panels[0]).flat.worstStrain).toBeGreaterThan(0.02);
+  });
+});
