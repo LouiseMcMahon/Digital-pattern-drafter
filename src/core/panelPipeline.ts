@@ -30,8 +30,6 @@ export interface PanelFlat {
   /** For a hanging panel: the number of each vertex in the whole skirt it was cut from (so halves agree along the side seams they share), and how many vertices the whole skirt has. */
   sewIds?: number[];
   sewSize?: number;
-  /** For a hanging panel: x and z of the vertical line it hangs round. */
-  axis?: [number, number];
   /** For a hanging panel: the length it hangs, which is worked out when the hem goes to the floor. */
   hangLength?: number;
   /** For a hanging panel: the flare used, which is more than asked for where the panel would otherwise pass through the body. */
@@ -149,7 +147,7 @@ export function computePanels(original: Mesh, graph: SurfaceGraph, seams: readon
         hanging: true, flareUsed: built.flare, clearFlare: built.clearFlare, hangLength,
         // The last column of a closed seam is the first again: the same place on the whole skirt, so the same vertices where the sides are sewn.
         sewIds: Array.from({ length: built.mesh.positions.length / 3 }, (_, v) => { const column = firstColumn + Math.floor(v / built.rows); return (closed && column === wholeColumns - 1 ? 0 : column) * built.rows + (v % built.rows); }),
-        sewSize: wholeColumns * built.rows, axis: built.axis, size: area(built.mesh, triangles), triangles,
+        sewSize: wholeColumns * built.rows, size: area(built.mesh, triangles), triangles,
         sub: { mesh: built.mesh, vertexMap: Array.from({ length: built.mesh.positions.length / 3 }, (_, i) => i) },
         draped: built.mesh, gap: built.gap, loop: loops[0],
         edges: sides.map((e) => ({ ...e, length: length(e.vertices), flatLength: flatLengthOf(flat.uv, e.vertices) })),

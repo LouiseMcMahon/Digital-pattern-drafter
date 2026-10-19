@@ -37,8 +37,6 @@ export interface HangingPanel {
   rows: number;
   /** Per vertex: height off the body (cm). */
   gap: Float64Array;
-  /** x and z of the vertical line the panel hangs round (the middle of the body). */
-  axis: [number, number];
   /** The flare used (as asked for). */
   flare: number;
 }
@@ -217,7 +215,7 @@ export function buildHanging(body: Mesh, path: ArrayLike<number>, options: Hangi
     triangles.push(a, b, c, a, c, d);
   }
   const tri = Uint32Array.from(triangles);
-  return { mesh: { positions: pos, triangles: tri }, pattern: options.fitted ? { positions: pos, triangles: tri } : { positions: place(cone), triangles: tri }, clearFlare: options.fitted ? 0 : needed, columns, rows, gap, flare: used, axis: [middle[0], middle[2]] };
+  return { mesh: { positions: pos, triangles: tri }, pattern: options.fitted ? { positions: pos, triangles: tri } : { positions: place(cone), triangles: tri }, clearFlare: options.fitted ? 0 : needed, columns, rows, gap, flare: used };
 }
 
 /** The part of a hanging panel from column `from` to column `to` (inclusive), as a panel of its own. */
@@ -233,7 +231,7 @@ export function sliceHanging(h: HangingPanel, from: number, to: number): Hanging
     triangles.push(a, b, c, a, c, d);
   }
   const tri = Uint32Array.from(triangles);
-  return { mesh: { positions, triangles: tri }, pattern: { positions: patternPositions, triangles: tri }, clearFlare: h.clearFlare, columns, rows, gap, flare: h.flare, axis: h.axis };
+  return { mesh: { positions, triangles: tri }, pattern: { positions: patternPositions, triangles: tri }, clearFlare: h.clearFlare, columns, rows, gap, flare: h.flare };
 }
 
 /** The column of a hanging panel whose seam point is nearest `at`. */

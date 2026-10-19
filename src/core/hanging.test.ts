@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildHanging, polylineLengthOf, resample } from './hanging';
-import type { Mesh } from './mesh';
+import { type Mesh, boundaryLoops } from './mesh';
 import { type Seam, SurfaceGraph, raycast } from './seam';
 import { computePanels, cutAt, type PanelFlat } from './panelPipeline';
 
@@ -171,13 +171,9 @@ describe('cloth simulation of a hanging panel', () => {
     const path = graph.seamPath(body.positions, waist);
     const h = buildHanging(body, path, { length: 30, flare: 30 });
     const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
-    const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
-    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned, axis: h.axis }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
-    for (let v = 0; v < h.mesh.positions.length / 3; v++) { // no twisting: every vertex keeps its angle round the axis
-      const angle = (m: Float64Array) => Math.atan2(m[3 * v + 2] - h.axis[1], m[3 * v] - h.axis[0]);
-      expect(Math.cos(angle(result.mesh.positions) - angle(h.mesh.positions))).toBeGreaterThan(1 - 1e-9);
-    }
-    for (const v of pinned) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6);
+    const border = boundaryLoops(h.mesh)[0]; // the sewn row, the side seams and the hem
+    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned: border }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
+    for (const v of border) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6); // seams and hem stay where they were put: no twisting, no riding up
     expect(result.worstStrain).toBeLessThan(0.02);
     for (let v = 0; v < result.mesh.positions.length / 3; v++) {
       expect(result.mesh.positions[3 * v + 1]).toBeGreaterThanOrEqual(20 - 1e-9); // not through the floor
