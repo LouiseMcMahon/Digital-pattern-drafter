@@ -535,7 +535,16 @@ function renderPanels(result: PanelsResult) {
       for (const e of d.edges) {
         if (!e.name) continue;
         const line = new THREE.BufferGeometry().setFromPoints(e.vertices.map((v) => new THREE.Vector3(shape.positions[3 * v], shape.positions[3 * v + 1], shape.positions[3 * v + 2])));
-        panelGroup.add(new THREE.Line(line, new THREE.LineBasicMaterial({ color: e.name === 'Hem seam' ? 0x1060ff : 0x10205a, depthTest: false })));
+        // Drawn last and on top of the (see-through) panel, in the colour of the other seams, with a dot at each end.
+        const drawn = new THREE.Line(line, new THREE.LineBasicMaterial({ color: 0x1060ff, depthTest: false, transparent: true }));
+        drawn.renderOrder = 10;
+        panelGroup.add(drawn);
+        for (const v of [e.vertices[0], e.vertices[e.vertices.length - 1]]) {
+          const dot = new THREE.Mesh(new THREE.SphereGeometry(0.6), new THREE.MeshBasicMaterial({ color: 0x1060ff, depthTest: false, transparent: true }));
+          dot.position.set(shape.positions[3 * v], shape.positions[3 * v + 1], shape.positions[3 * v + 2]);
+          dot.renderOrder = 10;
+          panelGroup.add(dot);
+        }
       }
     }
     const widened = d.hanging && d.flareUsed !== undefined && d.flareUsed > (hang?.flare ?? 0) + 0.5 ? ` <span class="muted">Flare widened to ${d.flareUsed.toFixed(0)}% so the panel clears the body.</span>` : '';
@@ -590,6 +599,7 @@ $('hang-make').onclick = () => {
   const note = $('hang-note');
   if (!seams[index] || seams[index].points.length < 2) { note.textContent = `Seam ${index + 1} does not exist yet or has fewer than 2 points.`; return; }
   if (!(length > 0) && !$<HTMLInputElement>('hang-floor').checked) { note.textContent = 'Give a length above 0.'; return; }
+  if (panels.some((q) => q.hang?.seam === index)) { note.textContent = `Seam ${index + 1} already has a hanging panel: change it in the list below, or remove it first.`; return; }
   note.textContent = '';
   checkpoint();
   const fitted = { ...($<HTMLInputElement>('hang-fitted').checked ? { fitted: true } : {}), ...($<HTMLInputElement>('hang-floor').checked ? { toFloor: true } : {}) };
