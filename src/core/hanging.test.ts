@@ -172,7 +172,11 @@ describe('cloth simulation of a hanging panel', () => {
     const h = buildHanging(body, path, { length: 30, flare: 30 });
     const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
     const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
-    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
+    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned, axis: h.axis }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
+    for (let v = 0; v < h.mesh.positions.length / 3; v++) { // no twisting: every vertex keeps its angle round the axis
+      const angle = (m: Float64Array) => Math.atan2(m[3 * v + 2] - h.axis[1], m[3 * v] - h.axis[0]);
+      expect(Math.cos(angle(result.mesh.positions) - angle(h.mesh.positions))).toBeGreaterThan(1 - 1e-9);
+    }
     for (const v of pinned) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6);
     expect(result.worstStrain).toBeLessThan(0.02);
     for (let v = 0; v < result.mesh.positions.length / 3; v++) {

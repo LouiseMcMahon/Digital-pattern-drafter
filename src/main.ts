@@ -450,7 +450,7 @@ function renderPanels(result: PanelsResult) {
     const group = `${h.seam}:${h.length}:${h.flare}:${h.fitted ? 1 : 0}:${h.toFloor ? 1 : 0}`;
     if (!skirtOffsets.has(group)) { skirtOffsets.set(group, skirtVertices); skirtVertices += d.sewSize; }
     const offset = skirtOffsets.get(group)!;
-    return { mesh: d.draped, flat: d.flat.uv, vertexMap: d.sewIds.map((id) => id + offset), hanging: true, pinned: d.edges[0].vertices };
+    return { mesh: d.draped, flat: d.flat.uv, vertexMap: d.sewIds.map((id) => id + offset), hanging: true, pinned: d.edges[0].vertices, axis: d.axis };
   };
   const garmentPieces = flattened.map(pieceOf);
   const garmentTargets = new Float64Array(3 * skirtVertices);
