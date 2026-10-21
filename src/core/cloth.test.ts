@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { SurfaceField } from './bodyField';
 import { type ClothProgress, clothPattern, clothPatterns, clothPatternsSteps, drapeCloth, drapeGarment } from './cloth';
-import type { Mesh } from './mesh';
+import { buildHanging } from './hanging';
+import { boundaryLoops, type Mesh } from './mesh';
+import { SurfaceGraph, raycast, type Seam } from './seam';
 
 /** A rectangle [-hx, hx] x [-hy, hy] with nx x ny cells; positions from place(u, v), flat pattern coordinates (u, v). */
 function sheet(hx: number, hy: number, nx: number, ny: number, place: (u: number, v: number) => [number, number, number]) {
@@ -367,3 +369,50 @@ describe('panels sewn together (drapeGarment, clothPatterns)', () => {
     expect(a.flippedTriangles + b.flippedTriangles).toBe(0);
   });
 });
+
+/** An open tube of radius r around the y axis, from y = 0 to 100, standing for a torso, with a closed seam round it at y = 60. */
+function tubeAndWaist(r = 10, sides = 48, rows = 40) {
+  const positions: number[] = [];
+  for (let j = 0; j <= rows; j++) for (let i = 0; i < sides; i++) positions.push(r * Math.cos((2 * Math.PI * i) / sides), (100 * j) / rows, r * Math.sin((2 * Math.PI * i) / sides));
+  const tris: number[] = [];
+  const id = (i: number, j: number) => j * sides + (i % sides);
+  for (let j = 0; j < rows; j++) for (let i = 0; i < sides; i++) tris.push(id(i, j), id(i + 1, j + 1), id(i + 1, j), id(i, j), id(i, j + 1), id(i + 1, j + 1));
+  const body: Mesh = { positions: Float64Array.from(positions), triangles: Uint32Array.from(tris) };
+  const graph = new SurfaceGraph(body.triangles, body.positions.length / 3);
+  const onTube = (angle: number) => { const hit = raycast(body, [30 * Math.cos(angle), 60, 30 * Math.sin(angle)], [-Math.cos(angle), 0, -Math.sin(angle)])!; return { tri: hit.tri, bary: hit.bary }; };
+  const waist: Seam = { points: [0, 1, 2, 3].map((k) => onTube((k * Math.PI) / 2)), closed: true };
+  return { body, waist, path: graph.seamPath(body.positions, waist) };
+}
+const { body, path } = tubeAndWaist();
+
+describe('cloth simulation of a hanging panel', () => {
+  it('keeps the sewn row where it is, lets the rest hang, and does not stretch', async () => {
+    const { flatten } = await import('./flatten');
+    const { uniformEase } = await import('./ease');
+    const h = buildHanging(body, path, { length: 30, flare: 30 });
+    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
+    const border = boundaryLoops(h.mesh)[0]; // the sewn row, the side seams and the hem
+    const [result] = drapeGarment([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned: border }], new SurfaceField(body), { iterations: 600, edgePasses: 16, floor: 20 });
+    for (const v of border) for (let c = 0; c < 3; c++) expect(result.mesh.positions[3 * v + c]).toBeCloseTo(h.mesh.positions[3 * v + c], 6); // seams and hem stay where they were put: no twisting, no riding up
+    expect(result.worstStrain).toBeLessThan(0.02);
+    for (let v = 0; v < result.mesh.positions.length / 3; v++) {
+      expect(result.mesh.positions[3 * v + 1]).toBeGreaterThanOrEqual(20 - 1e-9); // not through the floor
+      expect(Math.hypot(result.mesh.positions[3 * v], result.mesh.positions[3 * v + 2])).toBeGreaterThan(9.9); // not into the body
+    }
+  });
+});
+
+describe('cloth patterns for a hanging panel', () => {
+  it('keeps it hanging and pinned through the touch-up rounds', async () => {
+    const { flatten } = await import('./flatten');
+    const { uniformEase } = await import('./ease');
+    const h = buildHanging(body, path, { length: 30, flare: 30 });
+    const flat = flatten(h.mesh, { ease: uniformEase(0, 0) });
+    const pinned = Array.from({ length: h.columns }, (_, i) => i * h.rows);
+    const [r] = clothPatterns([{ mesh: h.mesh, flat: flat.uv, hanging: true, pinned }], new SurfaceField(body), { rounds: 3, iterations: 100, touchUp: 30, edgePasses: 16 });
+    for (const v of pinned) expect(r.mesh.positions[3 * v + 1]).toBeCloseTo(h.mesh.positions[3 * v + 1], 6);
+    expect(r.maxSeamError).toBe(0); // no border target to fall short of
+    expect(r.worstStrain).toBeLessThan(0.03);
+  });
+});
+
